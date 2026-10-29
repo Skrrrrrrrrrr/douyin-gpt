@@ -1,6 +1,7 @@
 {
   "account": { "douyinId": "", "secUid": "" },
   "browser": { "headless": false },
+  "journal": { "enabled": true, "refreshMinutes": 30, "outputDir": "" },
   "browse": {
     "enabled": true,
     "everyMinutes": 5,

@@ -36,6 +36,7 @@ export function providerEngagement(cfg, provider = 'openai') {
 }
 export function validateConfig(cfg) {
   const defaults = defaultConfig();
+  cfg.journal = { ...defaults.journal, ...(cfg.journal || {}) };
   cfg.engagement = { ...defaults.engagement, ...(cfg.engagement || {}) };
   const ds = cfg.deepseek || {};
   cfg.deepseek = { ...defaults.deepseek, ...ds,
@@ -62,6 +63,9 @@ export function validateConfig(cfg) {
   positive(cfg.reply.perContactPerDay, 'reply.perContactPerDay', 0, 500);
   positive(cfg.reply.totalPerDay, 'reply.totalPerDay', 0, 1000);
   if (typeof cfg.deepseek.enabled !== 'boolean' || typeof cfg.deepseek.engagement.enabled !== 'boolean') throw new Error('deepseek.enabled 和 deepseek.engagement.enabled 必须是布尔值');
+  if (typeof cfg.journal.enabled !== 'boolean') throw new Error('journal.enabled 必须是布尔值');
+  positive(cfg.journal.refreshMinutes, 'journal.refreshMinutes', 1, 1440);
+  if (typeof cfg.journal.outputDir !== 'string' || (cfg.journal.outputDir && resolve(cfg.journal.outputDir) !== cfg.journal.outputDir)) throw new Error('journal.outputDir 必须为空或绝对路径');
   for (const [key,min,max] of [['videosPerDay',0,300],['videosPerRound',1,10],['everyMinutes',1,1440]]) positive(cfg.deepseek.browse[key], `deepseek.browse.${key}`, min, max);
   for (const provider of PROVIDERS) {
     const settings = providerEngagement(cfg, provider);

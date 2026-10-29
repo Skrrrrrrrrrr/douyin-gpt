@@ -1,8 +1,8 @@
 # douyin-gpt
 
-在 Mac 上运行的 GPT / DeepSeek 抖音助手：登录自己的抖音账号，主动浏览推荐视频、发表评论、回复新评论，并由 GPT 自动回复指定联系人的新私信。
+在 Mac 上运行的 GPT / DeepSeek 抖音助手：登录自己的抖音账号，主动浏览推荐视频、发表评论、回复新评论，分别生成每日日志，并由 GPT 自动回复指定联系人的新私信。
 
-这是 0.3.0 命令行版本。Node.js 22 及以上，机器已有 Chrome 或 Edge 即可；没有 npm 运行依赖，不需要 DSH、Python、Windows OCR 或下载 Chromium。两个服务均使用各自的 Responses API；默认模型为 `gpt-6.1-terra` 和支持图像输入的 `deepseek-flash`。
+这是 0.4.0 命令行版本。Node.js 22 及以上，机器已有 Chrome 或 Edge 即可；没有 npm 运行依赖，不需要 DSH、Python、Windows OCR 或下载 Chromium。两个服务均使用各自的 Responses API；默认模型为 `gpt-6.1-terra` 和支持图像输入的 `deepseek-flash`。
 
 ## 当前实现
 
@@ -183,6 +183,40 @@ node src/cli.mjs comments-resolve --id '记录ID' --as skip
 
 `sent` 表示已在评论区回读；`accepted` 表示抖音返回了评论 ID，但尚未完成回读；`not_sent` 表示发送前被拦；`uncertain` 表示无法确认结果。评论记录在 `comments.json`，不要通过删除这个文件来解除暂停，这会丢失去重记录。
 
+## 每日日志
+
+默认启用。每条视频记录后，立即更新 `reports/YYYY-MM-DD.md`；GPT 和 DeepSeek 分别根据自己当天的视频记录生成综合总结，最多每 30 分钟重算一次，没有新内容时复用已有总结。主循环在没有新视频的轮次也会检查总结和公开互动计数。
+
+一份日志包含当天概况、两个模型的内容归类、回看线索、当天观察、判断范围，以及全部视频的逐条摘要、画面依据、原链接和北京时间。日志和总结请求均不包含私信、联系人名单或私人人设；综合总结只使用已保存的公开视频分析，不重新刷视频、不发送评论。
+
+```json
+{
+  "journal": {
+    "enabled": true,
+    "refreshMinutes": 30,
+    "outputDir": "/absolute/path/to/douyin-daily-logs"
+  }
+}
+```
+
+`outputDir` 为空时只保存数据目录内的报告；填写专用绝对目录后，同时把每个日期的 Markdown 日志同步过去。本机已经同步到任务的 `outputs/douyin-daily-logs/`，用户可以直接打开。日期按北京时间划分，跨天创建新的日志，前一天的未完成总结继续补齐。
+
+每个主题必须覆盖属于该模型的全部视频 ID，不能遗漏、重复或杜撰；格式无效或接口失败时保留逐条记录，后续再尝试生成总结。原始每日资料另存 `reports/YYYY-MM-DD.videos.json`，日常状态裁剪到最近 1000 条也不会删除这些归档。`reports/YYYY-MM-DD.summary.json` 保存模型总结及其来源版本，重启不重复消耗 API。
+
+需要手动生成或重新总结时，先停止后台进程，再执行：
+
+```bash
+npm run stop
+npm run journal
+# 指定日期；只读取已存的该日记录：
+node src/cli.mjs journal --day 2026-10-29
+# 只有明确需要重算时才添加 --refresh：
+node src/cli.mjs journal --day 2026-10-29 --refresh
+npm run start:background
+```
+
+自动日志依赖正在运行的本机助手及 Mac 保持唤醒，没有额外注册系统定时任务。
+
 ## 记录与结果核对
 
 ```bash
@@ -200,6 +234,8 @@ node src/cli.mjs outbox
 | `state.json` | 消息去重、上下文、发送记录、观看记录 |
 | `comments.json` | 公开评论去重、互动通知基线、模型归属、评论与回复发送记录 |
 | `reports/日期.md` | 视频日报 |
+| `reports/日期.videos.json` | 该日公开视频源记录，独立归档 |
+| `reports/日期.summary.json` | 两个模型的综合总结、来源版本及刷新时间 |
 | `frames/` | 视频抽帧，启动时清理超过 7 天的文件 |
 | `browser.log` | 浏览器启动日志 |
 
@@ -223,7 +259,7 @@ npm run demo
 
 `demo` 用虚构联系人、视频和 GPT 替身演示“建立基线 → 浏览 → 收到消息 → 回复一次 → 再次轮询不重复”。不打开浏览器、不联网，也不访问真实账号。
 
-自动化测试覆盖私信与评论去重、重启恢复、配额与冷却、通知基线、楼根和回复对象、背景页面与通知弹层、停止信号、发送方识别、两个模型的 Responses API 请求结构、独立计数、原模型回复归属和凭证隔离。自动化 API 测试使用假服务，不会消耗真实 API 额度。
+自动化测试覆盖私信与评论去重、重启恢复、配额与冷却、通知基线、楼根和回复对象、背景页面与通知弹层、停止信号、发送方识别、两个模型的 Responses API 请求结构、独立计数、原模型回复归属和凭证隔离。日志另测完整视频归类、跨天、独立模型输入、重启缓存、失败保留原始记录、刷新间隔、镜像一致与长期归档。自动化 API 测试使用假服务，不会消耗真实 API 额度。
 
 ## 当前边界
 

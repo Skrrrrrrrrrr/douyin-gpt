@@ -1,8 +1,7 @@
-import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { dayKey, PROVIDERS, providerBrowse, providerEngagement, providerLabel } from './config.mjs';
 import { sleep } from './browser.mjs';
 import { StopRequired } from './douyin.mjs';
+import { DailyJournal } from './journal.mjs';
 
 export const messageSignature = messages => JSON.stringify(messages.map(m => [m.id, m.from, m.text, m.item]));
 export function unanswered(messages) {
@@ -17,6 +16,7 @@ export class Engine {
   constructor({ home, cfg, store, gpt, models = {}, dy, messenger, engagement, live = false, log = console.log }) {
     Object.assign(this, { home, cfg, store, gpt, dy, messenger, engagement, live, log });
     this.models = { openai: gpt, ...models };
+    this.journal = new DailyJournal({ home, cfg, store, models: this.models, ledger: engagement?.ledger, log });
     this.previews = [];
     this.previewedInputs = new Map();
   }
@@ -109,13 +109,11 @@ export class Engine {
     }
   }
   report() {
-    const videos = this.store.data.videos.filter(v => v.day === dayKey());
-    const text = [`# 抖音浏览记录 · ${dayKey()}`, '', '> 判断依据：文案和抽样画面；本版没有音频转写。', '', ...videos.flatMap(v => [
-      `## ${v.id}`, `${v.desc.replace(/\n/g, ' ')} · ${v.author}`, '', v.url, '',
-      `模型：${providerLabel(v.provider)}${v.model ? `（${v.model}）` : ''}`,
-      `记录：${v.analysis.summary}`, `证据：${v.analysis.evidence}`, `推荐：${v.analysis.recommend ? '是' : '否'} · 把握：${v.analysis.confidence}`, '',
-    ])].join('\n');
-    writeFileSync(join(this.home, 'reports', `${dayKey()}.md`), text, { mode: 0o600 });
+    return this.journal.writeSnapshot();
+  }
+  async refreshJournal(signal) {
+    try { await this.journal.tick(signal); }
+    catch (error) { this.log(`每日日志暂未更新：${error.message}`); }
   }
   async browseRound(signal, provider = 'openai') {
     const browse = providerBrowse(this.cfg, provider), engagement = providerEngagement(this.cfg, provider);
@@ -151,6 +149,7 @@ export class Engine {
     await this.pollReplies();
     if (!signal?.aborted) await this.engagement?.poll(signal,{force:true});
     for (const provider of PROVIDERS) if (!signal?.aborted) await this.browseRound(signal,provider);
+    if (!signal?.aborted) await this.refreshJournal(signal);
   }
   async run(signal) {
     this.signal = signal;
@@ -163,6 +162,7 @@ export class Engine {
         const browse = providerBrowse(this.cfg, provider);
         if (Date.now() - this.store.lastBrowseAt(provider) >= browse.everyMinutes * 60_000) await this.browseRound(signal,provider);
       }
+      if (!signal.aborted) await this.refreshJournal(signal);
       for (let i = 0; i < this.cfg.reply.pollSeconds && !signal.aborted; i++) await sleep(1000);
     }
   }

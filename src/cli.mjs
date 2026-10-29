@@ -14,6 +14,7 @@ import { importChromeLogin } from './import-chrome.mjs';
 import { Comments } from './comments.mjs';
 import { CommentStore } from './comment-store.mjs';
 import { CommentAutomation } from './comment-automation.mjs';
+import { DailyJournal, journalDay } from './journal.mjs';
 
 loadEnv();
 const home = homePath();
@@ -33,6 +34,7 @@ const help = `douyin-gpt · Mac / GPT 抖音助手
   once --live                       正式运行一轮
   start --live                      持续刷视频、回私信，并执行已启用的评论操作
   status                            查看运行记录与今日计数
+  journal [--day YYYY-MM-DD] [--refresh]  生成每日总结和完整视频日志，不打开浏览器
   outbox                            查看回复记录
   comments-outbox                   查看公开评论和评论回复记录
   comments-resolve --id ID --as sent|skip  核对评论发送结果后解除暂停
@@ -94,7 +96,7 @@ async function main() {
     }, null, 2));
     return;
   }
-  if (!['login', 'import-chrome', 'contacts', 'allow', 'deny', 'once', 'start', 'resolve', 'comments-resolve', 'browser-close'].includes(command)) throw new Error(`未知命令 ${command}，运行 node src/cli.mjs help 查看用法`);
+  if (!['login', 'import-chrome', 'contacts', 'allow', 'deny', 'once', 'start', 'journal', 'resolve', 'comments-resolve', 'browser-close'].includes(command)) throw new Error(`未知命令 ${command}，运行 node src/cli.mjs help 查看用法`);
   if (command === 'start' && !args.includes('--live')) throw new Error('持续自动回复使用 start --live；先预览可用 once');
   if (['once', 'start'].includes(command) && !modelConfig().apiKey) throw new Error('请先在项目 .env 填 OPENAI_API_KEY；不需要把密钥发到聊天里');
   if (['once', 'start'].includes(command) && cfg.deepseek.enabled && !modelConfig('deepseek').apiKey) throw new Error('请先在本机配置 DEEPSEEK_API_KEY，或关闭 deepseek.enabled');
@@ -103,6 +105,15 @@ async function main() {
   let closeBrowser = false;
   try {
     const store = new Store(home);
+    if (command === 'journal') {
+      const day = journalDay(arg('--day') || dayKey());
+      const models = { openai: new Gpt(modelConfig()) };
+      if (cfg.deepseek.enabled) models.deepseek = new Gpt(modelConfig('deepseek'));
+      const journal = new DailyJournal({home,cfg,store,models,ledger:new CommentStore(home),log});
+      const file = await journal.refresh({day,force:args.includes('--refresh')});
+      console.log(file ? `每日日志已保存：${file}${cfg.journal.outputDir ? `\n同步目录：${cfg.journal.outputDir}` : ''}` : '每日日志已关闭');
+      return;
+    }
     if(command==='comments-resolve'){
       const ledger=new CommentStore(home),action=ledger.data.actions.find(a=>a.id===arg('--id')),as=arg('--as');
       if(!action||!['draft','sending','accepted','uncertain','not_sent'].includes(action.status)||!['sent','skip'].includes(as))throw new Error('需要评论记录 ID，以及 --as sent 或 --as skip');
