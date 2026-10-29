@@ -10,6 +10,18 @@
     "framesPerVideo": 2,
     "interests": []
   },
+  "engagement": {
+    "enabled": false,
+    "commentOnVideos": true,
+    "replyToComments": true,
+    "commentsPerDay": 3,
+    "repliesPerDay": 10,
+    "perRound": 1,
+    "pollSeconds": 60,
+    "commentCooldownMinutes": 30,
+    "maxChars": 100,
+    "minConfidence": 0.7
+  },
   "reply": {
     "enabled": true,
     "pollSeconds": 15,

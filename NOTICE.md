@@ -5,6 +5,7 @@
 - `vendor/newjo/im-send.mjs` 源自 [NEWJO123/dsh-douyin-scroll](https://github.com/NEWJO123/dsh-douyin-scroll)，固定来源提交 `7c6e2a2ff3443eee89c4935c1304df5822b40e65`，MIT，版权为 2026 dsh-douyin-scroll contributors。完整许可证在 `vendor/newjo/LICENSE`。
 - 该适配器已修改：连接本程序的专用浏览器标签；输出稳定消息 ID；强制以稳定账号 ID 操作；发送前再次核对可见会话账号和消息快照；拒绝拼接已有草稿；校验完整正文；用精确正文回读；允许导出函数做离线测试。保留了上游的会话匹配、头像位置判定和页面点击实现。
 - 同源读取、CDP 抽帧的方案参考 [Xia28zhi/dsh-douyin-scroll](https://github.com/Xia28zhi/dsh-douyin-scroll)，来源提交 `eb28978092307ae7df8ff4a5e4af116dac049937`，MIT，Copyright (c) 2026 Xia28zhi。本项目的数据与抽帧模块独立编写。
+- 公开评论适配器独立编写：参考上述两个项目公开记录的评论输入框定位、楼根语义与通知类型，使用正常页面 UI 发评论，并读取页面返回的公开评论和回执；未复制签名算法或验证处理代码。
 - 两个参考项目都采用了 DSH 插件的相关工程思路；Xia 项目另在其 NOTICE 中署名 `c1overzz/dsh-bili-scroll`。本项目未引入该项目源码。
 
 Xia28zhi 项目的 MIT 许可原文：

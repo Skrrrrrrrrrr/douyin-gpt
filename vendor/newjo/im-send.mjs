@@ -30,7 +30,10 @@ import { openPage, sleep } from '../../src/im-browser-bridge.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 
-const out = (o) => { console.log(JSON.stringify(o, null, 1)); process.exitCode = o.ok ? 0 : 1 }
+let sendAttempted = false
+const out = (o) => { console.log(JSON.stringify({ ...o, send_attempted: sendAttempted }, null, 1)); process.exitCode = o.ok ? 0 : 1 }
+// 抖音 EditorKit 的空输入框包含 U+200B。只清理编辑器占位字符，保留 emoji 的 ZWJ。
+const normalizeEditorText = value => String(value || '').replace(/[\u200b\ufeff\r]/g, '').trim()
 
 const argv = process.argv.slice(2)
 const argOf = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? (argv[i + 1] ?? '') : d }
@@ -703,7 +706,7 @@ async function main() {
       var e=es.find(function(n){var r=n.getBoundingClientRect();return r.width>80&&r.height>10;});
       return e ? String(e.innerText||e.value||'').trim() : '';
     })()`)
-    if (String(existingDraft || '').trim()) return out({ ok: false, sent: false, error: '聊天框已有未发送草稿，已停止，避免覆盖或拼接' })
+    if (normalizeEditorText(existingDraft)) return out({ ok: false, sent: false, error: '聊天框已有未发送草稿，已停止，避免覆盖或拼接' })
 
     // 点输入框
     const pos = JSON.parse(await c.ev(`(function(){
@@ -724,10 +727,9 @@ async function main() {
       var e=panel && panel.querySelector('[contenteditable="true"], textarea');
       return e ? String(e.innerText||e.value||'').replace(/[\\u200b\\r]/g,'') : '';
     })()`)
-    if (!String(typed).trim()) return out({ ok: false, error: '正文没进输入框（可能被风控拦截）', chrome: chromed })
+    if (!normalizeEditorText(typed)) return out({ ok: false, error: '正文没进输入框（可能被风控拦截）', chrome: chromed })
 
-    const normalized = (value) => String(value || '').replace(/[\u200b\r]/g, '').trim()
-    if (normalized(typed) !== normalized(text)) return out({ ok: false, sent: false, error: '输入框内容与计划发送内容不一致，未按发送' })
+    if (normalizeEditorText(typed) !== normalizeEditorText(text)) return out({ ok: false, sent: false, error: '输入框内容与计划发送内容不一致，未按发送' })
     if (String(await currentConvId(c.ev) || '') !== TOID) return out({ ok: false, sent: false, error: '按发送前会话身份发生变化' })
     const expectedMessages = JSON.parse(readFileSync(EXPECTED_FILE, 'utf8'))
     const latestMessages = (await readMessages(c.ev)).slice().reverse().slice(-60)
@@ -735,6 +737,7 @@ async function main() {
       return out({ ok: false, sent: false, error: '按发送前收到新消息或主人已回复，已取消；请核对输入框草稿' })
     }
 
+    sendAttempted = true
     await c.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 })
     await c.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 })
     await sleep(2600)
@@ -801,7 +804,7 @@ async function main() {
   } finally { c.close() }
 }
 
-export { readMessages, listConversations, currentConvId, openConversation, messageIdentity }
+export { readMessages, listConversations, currentConvId, openConversation, messageIdentity, normalizeEditorText }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main().catch((e) => out({ ok: false, error: String(e?.message ?? e) }))
 }

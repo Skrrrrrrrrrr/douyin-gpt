@@ -135,6 +135,7 @@ export class Douyin {
     const selector = `.video_${video.id} video, [data-e2e-vid="${video.id}"] video`;
     const page = await this.browser.page('video', video.url);
     await this.browser.navigate(page, video.url);
+    await page.send('Page.bringToFront');
     let ready = false;
     for (let i = 0; i < 24; i++) {
       ready = await page.ev(`(() => {

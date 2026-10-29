@@ -11,6 +11,9 @@ import { Messenger } from './messenger.mjs';
 import { Gpt } from './openai.mjs';
 import { Engine } from './engine.mjs';
 import { importChromeLogin } from './import-chrome.mjs';
+import { Comments } from './comments.mjs';
+import { CommentStore } from './comment-store.mjs';
+import { CommentAutomation } from './comment-automation.mjs';
 
 loadEnv();
 const home = homePath();
@@ -28,9 +31,11 @@ const help = `douyin-gpt · Mac / GPT 抖音助手
   deny --id sec_uid                 移出名单
   once                              预览回复并浏览一轮，不发消息
   once --live                       正式运行一轮
-  start --live                      持续浏览并回复名单里的新私信
+  start --live                      持续刷视频、回私信，并执行已启用的评论操作
   status                            查看运行记录与今日计数
   outbox                            查看回复记录
+  comments-outbox                   查看公开评论和评论回复记录
+  comments-resolve --id ID --as sent|skip  核对评论发送结果后解除暂停
   resolve --id 记录ID --as sent|skip 人工核对结果后解除会话暂停
   browser-close                     关闭本程序的专用浏览器
 
@@ -61,8 +66,10 @@ async function main() {
     if (checks.some(([, ok]) => !ok)) process.exitCode = 1;
     return;
   }
-  if (command === 'status' || command === 'outbox') {
+  if (command === 'status' || command === 'outbox' || command === 'comments-outbox') {
     const store = new Store(home);
+    const comments = new CommentStore(home);
+    if(command==='comments-outbox'){console.log(JSON.stringify(comments.data.actions.slice(-30),null,2));return;}
     if (command === 'outbox') console.log(JSON.stringify(store.data.outbox.slice(-30), null, 2));
     else console.log(JSON.stringify({
       account: cfg.account.douyinId || (cfg.account.secUid ? '已绑定' : '未绑定'),
@@ -71,10 +78,11 @@ async function main() {
       repliesToday: store.data.outbox.filter(o => o.day === dayKey() && o.status === 'sent').length,
       unresolved: store.data.outbox.filter(o => ['sending', 'uncertain'].includes(o.status)).map(o => ({ id: o.id, label: o.label, status: o.status })),
       lastBrowseAt: store.data.lastBrowseAt ? new Date(store.data.lastBrowseAt).toISOString() : null,
+      comments: { enabled: cfg.engagement.enabled, postedToday: comments.count('comment'), repliedToday: comments.count('reply'), halted: comments.data.halted, inboxInitialized: comments.data.initialized },
     }, null, 2));
     return;
   }
-  if (!['login', 'import-chrome', 'contacts', 'allow', 'deny', 'once', 'start', 'resolve', 'browser-close'].includes(command)) throw new Error(`未知命令 ${command}，运行 node src/cli.mjs help 查看用法`);
+  if (!['login', 'import-chrome', 'contacts', 'allow', 'deny', 'once', 'start', 'resolve', 'comments-resolve', 'browser-close'].includes(command)) throw new Error(`未知命令 ${command}，运行 node src/cli.mjs help 查看用法`);
   if (command === 'start' && !args.includes('--live')) throw new Error('持续自动回复使用 start --live；先预览可用 once');
   if (['once', 'start'].includes(command) && !modelConfig().apiKey) throw new Error('请先在项目 .env 填 OPENAI_API_KEY；不需要把密钥发到聊天里');
   const release = takeLock(home, { runtimeId: arg('--runtime-id') || '' });
@@ -82,6 +90,13 @@ async function main() {
   let closeBrowser = false;
   try {
     const store = new Store(home);
+    if(command==='comments-resolve'){
+      const ledger=new CommentStore(home),action=ledger.data.actions.find(a=>a.id===arg('--id')),as=arg('--as');
+      if(!action||!['draft','sending','accepted','uncertain','not_sent'].includes(action.status)||!['sent','skip'].includes(as))throw new Error('需要评论记录 ID，以及 --as sent 或 --as skip');
+      ledger.transition(action,as==='sent'?'sent':'skipped','使用者核对，本命令不会重发');
+      if(!ledger.data.actions.some(a=>['sending','uncertain'].includes(a.status))){ledger.data.halted='';ledger.save();}
+      console.log('已记录评论核对结果，本条不会重发');return;
+    }
     if (command === 'deny') {
       const id = arg('--id');
       if (!id) throw new Error('需要 --id sec_uid');
@@ -174,8 +189,10 @@ async function main() {
     messenger.signal = controller.signal;
     const gpt = new Gpt(modelConfig());
     gpt.signal = controller.signal;
-    const engine = new Engine({ home, cfg, store, gpt, dy, messenger, live: args.includes('--live'), log });
+    const engagement = new CommentAutomation({home,cfg,gpt,comments:new Comments(home,browser),dy,store,live:args.includes('--live'),log});
+    const engine = new Engine({ home, cfg, store, gpt, dy, messenger, engagement, live: args.includes('--live'), log });
     log(`${args.includes('--live') ? '正式运行' : '预览模式，不发消息'}；名单 ${cfg.reply.contacts.filter(c => c.enabled).length} 人`);
+    log(`公开评论：${cfg.engagement.enabled&&cfg.engagement.commentOnVideos?'开':'关'}（${cfg.engagement.commentsPerDay}/天）；评论回复：${cfg.engagement.enabled&&cfg.engagement.replyToComments?'开':'关'}（${cfg.engagement.repliesPerDay}/天）`);
     try {
       if (command === 'start') await engine.run(controller.signal);
       else await engine.once(controller.signal);

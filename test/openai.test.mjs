@@ -65,3 +65,16 @@ test('停止信号会取消正在进行的 GPT 请求', async () => {
   controller.abort();
   await assert.rejects(pending, /cancelled/);
 });
+test('公开评论只发送公开上下文，不包含私信人设；链接和无依据的超长输出被拒绝', async () => {
+  let request;
+  const model=new Gpt({apiKey:'test',model:'gpt-6.1-terra',baseUrl:'https://api.openai.com/v1'}, {fetchImpl:async (_url,options)=>{
+    request=JSON.parse(options.body);
+    return new Response(JSON.stringify(response({shouldPost:true,text:'这个挂件的造型挺有意思。',reason:'具体观察',confidence:0.9})),{status:200});
+  }});
+  model.persona='SECRET_PRIVATE_CHAT_PERSONA';
+  const result=await model.publicComment({video:{id:'7400000000000000001'},analysis:{summary:'挂件'},comments:[],maxChars:100});
+  assert.equal(result.shouldPost,true);assert.equal(JSON.stringify(request).includes('SECRET_PRIVATE_CHAT_PERSONA'),false);
+  assert.equal(request.model,'gpt-6.1-terra');assert.equal(request.text.format.name,'public_video_comment');
+  model.fetch=async()=>new Response(JSON.stringify(response({shouldPost:true,text:'https://example.com',reason:'',confidence:0.9})),{status:200});
+  await assert.rejects(model.publicComment({video:{},maxChars:100}),/不允许/);
+});

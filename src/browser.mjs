@@ -52,9 +52,15 @@ export class Cdp {
     this.ws = ws;
     this.next = 0;
     this.pending = new Map();
+    this.listeners = new Map();
     ws.addEventListener('message', event => {
       let message;
       try { message = JSON.parse(event.data); } catch { return; }
+      if (message.method) {
+        for (const listener of this.listeners.get(message.method) || []) {
+          try { Promise.resolve(listener(message.params || {})).catch(() => {}); } catch {}
+        }
+      }
       const pending = this.pending.get(message.id);
       if (!pending) return;
       clearTimeout(pending.timer);
@@ -67,6 +73,11 @@ export class Cdp {
   rejectPending(reason) {
     for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(new Error(reason)); }
     this.pending.clear();
+  }
+  on(method, listener) {
+    if (!this.listeners.has(method)) this.listeners.set(method, new Set());
+    this.listeners.get(method).add(listener);
+    return () => this.listeners.get(method)?.delete(listener);
   }
   send(method, params = {}, timeout = 15_000) {
     if (this.ws.readyState !== WebSocket.OPEN) return Promise.reject(new Error('浏览器连接不可用'));
@@ -83,7 +94,7 @@ export class Cdp {
     if (result.exceptionDetails) throw new Error('抖音页面执行失败：' + (result.exceptionDetails.exception?.description || result.exceptionDetails.text || '').slice(0, 240));
     return result.result?.value;
   }
-  close() { this.rejectPending('连接已关闭'); this.ws.close(); }
+  close() { this.rejectPending('连接已关闭'); this.listeners.clear(); this.ws.close(); }
 }
 export class Browser {
   constructor(home, { headless = false } = {}) {

@@ -14,8 +14,8 @@ export function unanswered(messages) {
   return tail.filter(m => m.from === 'them' && m.id && (m.text || m.item));
 }
 export class Engine {
-  constructor({ home, cfg, store, gpt, dy, messenger, live = false, log = console.log }) {
-    Object.assign(this, { home, cfg, store, gpt, dy, messenger, live, log });
+  constructor({ home, cfg, store, gpt, dy, messenger, engagement, live = false, log = console.log }) {
+    Object.assign(this, { home, cfg, store, gpt, dy, messenger, engagement, live, log });
     this.previews = [];
     this.previewedInputs = new Map();
   }
@@ -121,6 +121,7 @@ export class Engine {
     const known = new Set(this.store.data.videos.map(v => v.id));
     const remaining = Math.min(this.cfg.browse.videosPerRound, this.cfg.browse.videosPerDay - this.store.videoCount());
     const videos = (await this.dy.feed({ exclude: [...known], limit: remaining })).filter(v => !known.has(v.id)).slice(0, remaining);
+    let commented=0;
     for (const video of videos) {
       if (signal?.aborted) break;
       try {
@@ -129,6 +130,10 @@ export class Engine {
         this.store.addVideo(video, analysis);
         this.report();
         this.log(`已浏览 ${video.id}，${analysis.recommend ? '值得看' : '已记录'}`);
+        if(this.engagement&&commented<this.cfg.engagement.perRound){
+          try{const action=await this.engagement.onVideo(video,analysis,signal);if(action&&['accepted','sent'].includes(action.status))commented++;}
+          catch(error){this.log(`视频评论 ${video.id}：${error.message}`);}
+        }
       } catch (error) {
         if (error instanceof StopRequired) throw error;
         this.log(`视频 ${video.id}：${error.message}`);
@@ -138,11 +143,12 @@ export class Engine {
     this.store.data.lastBrowseAt = Date.now();
     this.store.save();
   }
-  async once(signal) { this.signal = signal; await this.pollReplies(); if (!signal?.aborted) await this.browseRound(signal); }
+  async once(signal) { this.signal = signal; await this.pollReplies(); if (!signal?.aborted) await this.engagement?.poll(signal,{force:true});if (!signal?.aborted) await this.browseRound(signal); }
   async run(signal) {
     this.signal = signal;
     while (!signal.aborted) {
       await this.pollReplies();
+      if(!signal.aborted)await this.engagement?.poll(signal);
       if (signal.aborted) break;
       if (Date.now() - this.store.data.lastBrowseAt >= this.cfg.browse.everyMinutes * 60_000) await this.browseRound(signal);
       for (let i = 0; i < this.cfg.reply.pollSeconds && !signal.aborted; i++) await sleep(1000);

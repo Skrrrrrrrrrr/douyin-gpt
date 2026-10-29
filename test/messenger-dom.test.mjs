@@ -1,7 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { runInNewContext } from 'node:vm';
-import { readMessages, currentConvId, messageIdentity } from '../vendor/newjo/im-send.mjs';
+import { readMessages, currentConvId, messageIdentity, normalizeEditorText } from '../vendor/newjo/im-send.mjs';
+
+test('EditorKit 的零宽占位不是草稿；真实文字和 emoji 保持有效', () => {
+  assert.equal(normalizeEditorText('\u200b'), '');
+  assert.equal(normalizeEditorText('\u200b\n\ufeff\r'), '');
+  assert.equal(normalizeEditorText('\u200b未发送的草稿\u200b'), '未发送的草稿');
+  assert.equal(normalizeEditorText('👨‍👩‍👧‍👦'), '👨‍👩‍👧‍👦');
+});
 
 function fixtureMessage(id, text, side) {
   const message = { serverId: id, isMyMessage: true, parsedContent: { text } };
