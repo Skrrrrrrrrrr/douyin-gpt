@@ -15,6 +15,8 @@ import { Comments } from './comments.mjs';
 import { CommentStore } from './comment-store.mjs';
 import { CommentAutomation } from './comment-automation.mjs';
 import { DailyJournal, journalDay } from './journal.mjs';
+import {buildEpisode} from './broadcast.mjs';
+import {Publisher} from './publisher.mjs';
 
 loadEnv();
 const home = homePath();
@@ -35,6 +37,8 @@ const help = `douyin-gpt · Mac / GPT 抖音助手
   start --live                      持续刷视频、回私信，并执行已启用的评论操作
   status                            查看运行记录与今日计数
   journal [--day YYYY-MM-DD] [--refresh]  生成每日总结和完整视频日志，不打开浏览器
+  video-build [--day YYYY-MM-DD]     生成双角色配音晚报，不发布
+  video-publish --live [--at 日期时间]  发布已完成的本日晚报
   outbox                            查看回复记录
   comments-outbox                   查看公开评论和评论回复记录
   comments-resolve --id ID --as sent|skip  核对评论发送结果后解除暂停
@@ -97,7 +101,7 @@ async function main() {
     }, null, 2));
     return;
   }
-  if (!['login', 'import-chrome', 'contacts', 'allow', 'deny', 'once', 'start', 'journal', 'resolve', 'comments-resolve', 'browser-close'].includes(command)) throw new Error(`未知命令 ${command}，运行 node src/cli.mjs help 查看用法`);
+  if (!['login', 'import-chrome', 'contacts', 'allow', 'deny', 'once', 'start', 'journal', 'video-build','video-publish', 'resolve', 'comments-resolve', 'browser-close'].includes(command)) throw new Error(`未知命令 ${command}，运行 node src/cli.mjs help 查看用法`);
   if (command === 'start' && !args.includes('--live')) throw new Error('持续自动回复使用 start --live；先预览可用 once');
   if (['once', 'start'].includes(command) && !modelConfig().apiKey) throw new Error('请先在项目 .env 填 OPENAI_API_KEY；不需要把密钥发到聊天里');
   if (['once', 'start'].includes(command) && cfg.deepseek.enabled && !modelConfig('deepseek').apiKey) throw new Error('请先在本机配置 DEEPSEEK_API_KEY，或关闭 deepseek.enabled');
@@ -106,6 +110,11 @@ async function main() {
   let closeBrowser = false;
   try {
     const store = new Store(home);
+    if(command==='video-build'){
+      const models={openai:new Gpt(modelConfig()),deepseek:new Gpt(modelConfig('deepseek'))};
+      const result=await buildEpisode({home,cfg,models,day:journalDay(arg('--day')||dayKey()),force:args.includes('--refresh'),log});
+      console.log(JSON.stringify({status:result.status,videoPath:result.videoPath,coverPath:result.coverPath},null,2));return;
+    }
     if (command === 'journal') {
       const day = journalDay(arg('--day') || dayKey());
       const models = { openai: new Gpt(modelConfig()) };
@@ -159,6 +168,11 @@ async function main() {
     }
     browser = new Browser(home, { headless: command === 'login' ? false : cfg.browser.headless });
     await browser.start();
+    if(command==='video-publish'){
+      const publisher=new Publisher(home,cfg,browser,{log});
+      const result=await publisher.publish(journalDay(arg('--day')||dayKey()),{live:args.includes('--live'),at:arg('--at'),reuseUpload:args.includes('--reuse-upload')});
+      console.log(JSON.stringify({status:result.status,title:result.title,scheduledAt:result.scheduledAt,platformUrl:result.platformUrl},null,2));return;
+    }
     const dy = new Douyin(home, browser);
     const messenger = new Messenger(home, browser);
     if (command === 'browser-close') { await browser.quit(); browser = null; console.log('专用浏览器已关闭'); return; }

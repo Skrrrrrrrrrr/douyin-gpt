@@ -36,6 +36,7 @@ export function providerEngagement(cfg, provider = 'openai') {
 }
 export function validateConfig(cfg) {
   const defaults = defaultConfig();
+  cfg.video = { ...defaults.video, ...(cfg.video || {}), voices: { ...defaults.video.voices, ...(cfg.video?.voices || {}) } };
   cfg.journal = { ...defaults.journal, ...(cfg.journal || {}) };
   cfg.engagement = { ...defaults.engagement, ...(cfg.engagement || {}) };
   const ds = cfg.deepseek || {};
@@ -68,6 +69,11 @@ export function validateConfig(cfg) {
   if (typeof cfg.deepseek.enabled !== 'boolean' || typeof cfg.deepseek.engagement.enabled !== 'boolean') throw new Error('deepseek.enabled 和 deepseek.engagement.enabled 必须是布尔值');
   if (typeof cfg.journal.enabled !== 'boolean') throw new Error('journal.enabled 必须是布尔值');
   positive(cfg.journal.refreshMinutes, 'journal.refreshMinutes', 1, 1440);
+  if(typeof cfg.video.enabled!=='boolean')throw new Error('video.enabled 必须是布尔值');
+  positive(cfg.video.hour,'video.hour',0,23);positive(cfg.video.minute,'video.minute',0,59);
+  for(const key of ['python','speechModel'])if(typeof cfg.video[key]!=='string'||!cfg.video[key].trim())throw new Error(`video.${key} 不能为空`);
+  if(typeof cfg.video.outputDir!=='string'||cfg.video.outputDir&&resolve(cfg.video.outputDir)!==cfg.video.outputDir)throw new Error('video.outputDir 必须为空或绝对路径');
+  for(const provider of PROVIDERS)if(typeof cfg.video.voices[provider]!=='string'||!cfg.video.voices[provider])throw new Error('视频配音必须配置两个声音');
   if (typeof cfg.journal.outputDir !== 'string' || (cfg.journal.outputDir && resolve(cfg.journal.outputDir) !== cfg.journal.outputDir)) throw new Error('journal.outputDir 必须为空或绝对路径');
   for (const [key,min,max] of [['videosPerDay',0,300],['videosPerRound',1,10],['everyMinutes',1,1440]]) positive(cfg.deepseek.browse[key], `deepseek.browse.${key}`, min, max);
   for (const provider of PROVIDERS) {

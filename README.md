@@ -2,7 +2,7 @@
 
 在 Mac 上运行的 GPT / DeepSeek 抖音助手：登录自己的抖音账号，主动浏览推荐视频、发表评论、回复新评论，分别生成每日日志，并按关键词选择 GPT 或 DeepSeek 回复指定联系人的新私信。
 
-这是 0.5.0 命令行版本。Node.js 22 及以上，机器已有 Chrome 或 Edge 即可；没有 npm 运行依赖，不需要 DSH、Python、Windows OCR 或下载 Chromium。两个服务均使用各自的 Responses API；默认模型为 `gpt-6.1-terra` 和支持图像输入的 `deepseek-flash`。
+这是 0.6.0 命令行版本。Node.js 22 及以上，机器已有 Chrome 或 Edge 即可；使用一个轻量 Node.js 依赖 `ws`；基础浏览和聊天不需要 DSH、Windows OCR 或下载 Chromium。视频功能另需 Python、Pillow 和 FFmpeg。两个服务均使用各自的 Responses API；默认模型为 `gpt-6.1-terra` 和支持图像输入的 `deepseek-flash`。
 
 ## 当前实现
 
@@ -27,6 +27,7 @@
 
 ```bash
 node --version
+npm install
 npm run init
 ```
 
@@ -236,6 +237,37 @@ npm run start:background
 ```
 
 自动日志依赖正在运行的本机助手及 Mac 保持唤醒，没有额外注册系统定时任务。
+
+## 双人配音视频晚报
+
+用户已授权的本机版本每天提前制片，安排当晚 21:00 发布；当前 Codex 自动任务在北京时间 18:30 运行 `node scripts/evening.mjs --live --schedule`。抖音定时发布要求至少提前 2 小时，因此制作时间早于公开发布时间。视频及描述明确标注日志统计截止时间。Mac 和 Codex 需要保持运行。
+
+白发角色为 GPT，蓝发角色为 DeepSeek；用户头像参考、透明角色图和生成提示词均位于 `assets/hosts/`。每条视频约一分钟，1080×1920，双人轮流配音、字幕和发言强调；当前不做逐字嘴型同步。两个模型只写自己当天观看内容的简短回顾，数量由程序填入。声音使用 OpenAI Realtime 的 `gpt-realtime-2.1-mini`，GPT 使用 coral，DeepSeek 使用 shimmer；配音回传转写须与台词相符才保存。
+
+视频只汇总公开日志和已在评论区回读成功的互动，不包含私信、联系人或登录信息。视频、描述和抖音自主声明均标记 AI 角色与合成配音。平台审核状态与提交成功分开记录。
+
+首次部署视频依赖：
+
+```bash
+python3 -m venv .data/video-venv
+.data/video-venv/bin/python -m pip install -r requirements-video.txt
+```
+
+将 `config.json` 的 `video.enabled` 设为 `true`，`video.python` 设为这个虚拟环境 Python 的绝对路径，`video.outputDir` 设为专用视频目录。本机已经配置完成。默认发布包关闭此功能；本机任务已按用户授权启用。
+
+```bash
+# 手动只做成片，先停止后台以取得同一运行锁：
+npm run stop
+node src/cli.mjs video-build
+npm run start:background
+
+# 已授权的每日入口，会自动恢复原先运行的后台：
+node scripts/evening.mjs --live --schedule
+```
+
+入口按北京时间取当天记录，先检查视频日账。同一天已有 `scheduled`、`submitted` 或 `published` 时直接返回，结果为 `publishing` 或 `uncertain` 时禁止自动重发。生成中断时可复用已有台词和音轨；只在实际进入提交前记为 `publishing`。通过创作者中心正常上传、填写标题及描述、选择“内容由AI生成”和定时发布，随后从作品管理回读。遇到验证、稿件冲突或发布限制时保留文件和状态，不覆盖其他稿件，不自动过验证。
+
+本机第一条视频已上传并安排为 2026-10-29 21:00，作品管理显示审核中。成片、台词及定时回读图保存在任务 `outputs/douyin-videos/`；后续状态保存在数据目录 `video/YYYY-MM-DD/episode.json`。
 
 ## 记录与结果核对
 

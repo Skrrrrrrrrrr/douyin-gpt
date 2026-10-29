@@ -181,7 +181,7 @@ export class Browser {
   }
   async navigate(page, url) {
     const parsed = new URL(url);
-    if (parsed.origin !== 'https://www.douyin.com') throw new Error('浏览器只允许访问抖音页面');
+    if (!['https://www.douyin.com','https://creator.douyin.com'].includes(parsed.origin)||parsed.username||parsed.password) throw new Error('浏览器只允许访问抖音及创作者中心页面');
     await page.send('Page.navigate', { url });
     await sleep(1500);
     for (let i = 0; i < 25; i++) {

@@ -1,11 +1,15 @@
 {
   "name": "douyin-gpt",
-  "version": "0.4.0",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
-  "description": "Mac 上运行的 GPT / DeepSeek 抖音助手：独立配额浏览视频、发表评论和回复",
-  "engines": { "node": ">=22" },
-  "bin": { "douyin-gpt": "./src/cli.mjs" },
+  "description": "Mac 上的 GPT / DeepSeek 抖音助手：刷视频、关键词路由回复、每日日志和双人配音晚报",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "douyin-gpt": "./src/cli.mjs"
+  },
   "scripts": {
     "init": "node src/cli.mjs init",
     "login": "node src/cli.mjs login",
@@ -20,6 +24,10 @@
     "journal": "node src/cli.mjs journal",
     "demo": "node scripts/demo.mjs",
     "test": "node --test test/*.test.mjs",
-    "check": "node scripts/check.mjs"
+    "check": "node scripts/check.mjs",
+    "evening": "node scripts/evening.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.22.0"
   }
 }
