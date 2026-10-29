@@ -30,6 +30,7 @@
   },
   "reply": {
     "enabled": true,
+    "routing": { "enabled": false, "deepseekKeyword": "大肥鱼" },
     "pollSeconds": 15,
     "maxChars": 240,
     "perContactPerDay": 40,

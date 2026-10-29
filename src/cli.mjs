@@ -79,6 +79,7 @@ async function main() {
       account: cfg.account.douyinId || (cfg.account.secUid ? '已绑定' : '未绑定'),
       contacts: cfg.reply.contacts.filter(c => c.enabled).map(c => c.label),
       today: dayKey(), videosToday: store.videoCount(),
+      privateReplyRouting: cfg.reply.routing.enabled ? { scope: '本轮未处理的新来信', keyword: cfg.reply.routing.deepseekKeyword, match: 'deepseek', otherwise: 'openai' } : { match: 'openai' },
       repliesToday: store.data.outbox.filter(o => o.day === dayKey() && o.status === 'sent').length,
       unresolved: store.data.outbox.filter(o => ['sending', 'uncertain'].includes(o.status)).map(o => ({ id: o.id, label: o.label, status: o.status })),
       lastBrowseAt: store.data.lastBrowseAt ? new Date(store.data.lastBrowseAt).toISOString() : null,
@@ -221,6 +222,7 @@ async function main() {
     const engagement = new CommentAutomation({home,cfg,gpt,models,comments:new Comments(home,browser),dy,store,live:args.includes('--live'),log});
     const engine = new Engine({ home, cfg, store, gpt, models, dy, messenger, engagement, live: args.includes('--live'), log });
     log(`${args.includes('--live') ? '正式运行' : '预览模式，不发消息'}；名单 ${cfg.reply.contacts.filter(c => c.enabled).length} 人`);
+    log(cfg.reply.routing.enabled ? `私信路由：本轮新来信包含「${cfg.reply.routing.deepseekKeyword}」→ DeepSeek；否则 → GPT` : '私信路由：GPT');
     for (const provider of PROVIDERS.filter(p => models[p])) {
       const browse = providerBrowse(cfg,provider), settings = providerEngagement(cfg,provider);
       log(`[${providerLabel(provider)} / ${models[provider].config.model}] 视频 ${browse.videosPerDay}/天；公开评论：${settings.enabled&&settings.commentOnVideos?'开':'关'}（${settings.commentsPerDay}/天）；评论回复：${settings.enabled&&settings.replyToComments?'开':'关'}（${settings.repliesPerDay}/天）`);

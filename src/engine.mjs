@@ -4,6 +4,9 @@ import { StopRequired } from './douyin.mjs';
 import { DailyJournal } from './journal.mjs';
 
 export const messageSignature = messages => JSON.stringify(messages.map(m => [m.id, m.from, m.text, m.item]));
+export function selectReplyProvider(incoming, routing) {
+  return routing?.enabled && routing.deepseekKeyword && incoming.some(m => typeof m.text === 'string' && m.text.includes(routing.deepseekKeyword)) ? 'deepseek' : 'openai';
+}
 export function unanswered(messages) {
   let lastMine = -1;
   messages.forEach((m, i) => { if (m.from === 'me') lastMine = i; });
@@ -57,8 +60,11 @@ export class Engine {
       }
       return;
     }
+    // 只用本轮未处理的来信判断路由；昵称、主人发言和历史中的关键词不影响选择。
+    const provider = selectReplyProvider(incoming, this.cfg.reply.routing), model = this.models[provider];
+    if (!model || (provider === 'deepseek' && !this.cfg.deepseek?.enabled)) { this.log(`${providerLabel(provider)} 未启用，保留 ${contact.label} 的消息待处理`); return; }
     incoming = incoming.slice(-10);
-    const previewKey = messageSignature(incoming);
+    const previewKey = `${provider}:${messageSignature(incoming)}`;
     if (!this.live && this.previewedInputs.get(contact.secUid) === previewKey) return;
     let sharedVideo = null;
     const card = [...incoming].reverse().find(m => /^\d{15,25}$/.test(m.item || ''));
@@ -66,28 +72,28 @@ export class Engine {
       try {
         const video = await this.dy.detail(card.item);
         const frames = await this.dy.watch(video, this.cfg.browse);
-        sharedVideo = { video, analysis: await this.gpt.analyze(video, frames, this.cfg.browse.interests) };
+        sharedVideo = { video, analysis: await model.analyze(video, frames, this.cfg.browse.interests) };
       } catch (error) {
         if (error instanceof StopRequired) throw error;
         sharedVideo = { error: '没有读到对方分享视频的画面；回复时如实说明' };
       }
     }
-    const generated = await this.gpt.reply({ contact, history: messages, incoming, recentVideos: this.store.recentVideos(), sharedVideo, maxChars: this.cfg.reply.maxChars });
+    const generated = await model.reply({ contact, history: messages, incoming, recentVideos: this.store.recentVideos(provider), sharedVideo, maxChars: this.cfg.reply.maxChars });
     if (this.signal?.aborted) return;
     if (!generated.shouldReply) {
       if (this.live) { this.store.remember(contact.secUid, incoming.map(m => m.id)); this.store.snapshot(contact.secUid, messages); }
-      this.log(`${contact.label}：本条不需要回复`);
+      this.log(`[${providerLabel(provider)}] ${contact.label}：本条不需要回复`);
       return;
     }
     if (!this.live) {
-      const preview = { contactId: contact.secUid, label: contact.label, text: generated.text, reason: generated.reason };
+      const preview = { contactId: contact.secUid, label: contact.label, provider, model: model.config?.model || '', text: generated.text, reason: generated.reason };
       this.previews.push(preview);
       this.previewedInputs.set(contact.secUid, previewKey);
-      this.log(`预览 ${contact.label}：${generated.text}`);
+      this.log(`[${providerLabel(provider)}] 预览 ${contact.label}：${generated.text}`);
       return;
     }
-    const item = this.store.draft(contact, incoming, generated.text, generated.reason);
-    if (item.status !== 'draft') return;
+    const item = this.store.draft(contact, incoming, generated.text, generated.reason, { provider, model: model.lastResponse?.model || model.config?.model || '' });
+    if (item.status !== 'draft' || (item.provider || 'openai') !== provider) return;
     const fresh = await this.messenger.read(contact);
     if (messageSignature(fresh) !== messageSignature(messages)) {
       this.store.transition(item, 'superseded', '生成期间会话有变化，已取消旧回复');
@@ -102,7 +108,7 @@ export class Engine {
     try {
       await this.messenger.send(contact, item.text, messages);
       this.store.transition(item, 'sent', '已在本人发出的消息中回读确认；不代表对方已读');
-      this.log(`已回复 ${contact.label}`);
+      this.log(`[${providerLabel(provider)}] 已回复 ${contact.label}`);
     } catch (error) {
       this.store.transition(item, 'uncertain', error.message);
       this.log(`${contact.label} 的发送结果不确定，已暂停该会话，请核对后 resolve`);

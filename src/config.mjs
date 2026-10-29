@@ -49,6 +49,9 @@ export function validateConfig(cfg) {
   for (const key of ['account', 'browser', 'browse', 'reply']) {
     if (!cfg[key] || typeof cfg[key] !== 'object') throw new Error(`缺少配置 ${key}`);
   }
+  cfg.reply.routing = { ...defaults.reply.routing, ...(cfg.reply.routing || {}) };
+  if (typeof cfg.reply.routing.enabled !== 'boolean') throw new Error('reply.routing.enabled 必须是布尔值');
+  if (typeof cfg.reply.routing.deepseekKeyword !== 'string' || !cfg.reply.routing.deepseekKeyword.trim() || [...cfg.reply.routing.deepseekKeyword].length > 40) throw new Error('reply.routing.deepseekKeyword 必须是 1～40 字的非空关键词');
   for (const key of ['douyinId', 'secUid']) if (typeof cfg.account[key] !== 'string') throw new Error(`account.${key} 必须是字符串`);
   for (const [section, key] of [['browser', 'headless'], ['browse', 'enabled'], ['reply', 'enabled']]) {
     if (typeof cfg[section][key] !== 'boolean') throw new Error(`${section}.${key} 必须是布尔值`);

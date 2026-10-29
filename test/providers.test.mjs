@@ -158,7 +158,7 @@ test('未知楼根的 @ 通知先解析真实页面，再交给原模型；不�
   await h.service.poll(undefined, { force: true });
   assert.equal(h.state.calls.deepseek.length, 1); assert.equal(h.state.sends.length, 1);
 });
-test('私信仍只交给 GPT，DeepSeek 不会接收名单、私信内容或人设', async t => {
+test('关键词路由未启用时私信只交给 GPT', async t => {
   const h = harness(t); h.cfg.reply.enabled = true;
   const contact = { secUid: 'MS4wLjABAAAA_TEST_PEER', label: '好友', enabled: true };
   h.cfg.reply.contacts = [contact]; h.store.baseline(contact.secUid, [{ id: 'old', from: 'them', text: '旧消息' }]);

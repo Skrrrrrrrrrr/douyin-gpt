@@ -78,12 +78,12 @@ export class Store {
     const counted = this.data.outbox.filter(o => o.day === today && ['sending', 'sent', 'uncertain'].includes(o.status));
     return Math.max(0, Math.min(cfg.totalPerDay - counted.length, cfg.perContactPerDay - counted.filter(o => o.contactId === id).length));
   }
-  draft(contact, messages, text, reason) {
+  draft(contact, messages, text, reason, { provider = 'openai', model = '' } = {}) {
     const ids = messages.map(m => m.id);
     // 同一输入批次只能入队一次；只有此处落盘成功后，调用方才能进入发送。
     const duplicate = this.data.outbox.find(o => o.contactId === contact.secUid && ids.some(id => o.inputIds.includes(id)));
     if (duplicate) return duplicate;
-    const item = { id: randomUUID(), contactId: contact.secUid, label: contact.label, inputIds: ids, text, reason, status: 'draft', day: dayKey(), createdAt: new Date().toISOString() };
+    const item = { id: randomUUID(), contactId: contact.secUid, label: contact.label, provider, model, inputIds: ids, text, reason, status: 'draft', day: dayKey(), createdAt: new Date().toISOString() };
     this.data.outbox.push(item);
     this.remember(contact.secUid, ids);
     this.save();
