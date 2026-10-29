@@ -1,9 +1,9 @@
 {
   "name": "douyin-gpt",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
-  "description": "Mac 上运行的 GPT 抖音助手：主动浏览视频，自动回复指定联系人",
+  "description": "Mac 上运行的 GPT / DeepSeek 抖音助手：独立配额浏览视频、发表评论和回复",
   "engines": { "node": ">=22" },
   "bin": { "douyin-gpt": "./src/cli.mjs" },
   "scripts": {

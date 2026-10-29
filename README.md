@@ -1,8 +1,8 @@
 # douyin-gpt
 
-在 Mac 上运行的独立 GPT 抖音助手：登录自己的抖音账号，主动浏览推荐视频、发表评论、回复新评论，并自动回复指定联系人的新私信。
+在 Mac 上运行的 GPT / DeepSeek 抖音助手：登录自己的抖音账号，主动浏览推荐视频、发表评论、回复新评论，并由 GPT 自动回复指定联系人的新私信。
 
-这是 0.2.0 命令行版本。Node.js 22 及以上，机器已有 Chrome 或 Edge 即可；没有 npm 运行依赖，不需要 DSH、Python、Windows OCR 或下载 Chromium。GPT 使用 OpenAI Responses API，模型可配置，默认 `gpt-6.1-terra`。
+这是 0.3.0 命令行版本。Node.js 22 及以上，机器已有 Chrome 或 Edge 即可；没有 npm 运行依赖，不需要 DSH、Python、Windows OCR 或下载 Chromium。两个服务均使用各自的 Responses API；默认模型为 `gpt-6.1-terra` 和支持图像输入的 `deepseek-flash`。
 
 ## 当前实现
 
@@ -18,6 +18,8 @@
 - 可选自动评论：只对实际浏览过、能写出具体内容的视频评论，同一视频只发一次。
 - 可选自动回复评论：只处理别人回复你的评论、评论区 @ 你、或在你的作品下新留言；先建立通知基线，不补回历史互动。
 - 评论通过页面正常操作发送，用稳定评论 ID 核对对象和楼根；新评论不在热榜中时，从通知入口打开对应楼层。评论区与私信的发送记录分开。
+- GPT 与 DeepSeek 使用同一后台进程、账号和浏览器，按顺序操作；观看、评论和评论回复按模型独立计数。
+- 公开评论记录跨模型去重。用户回复模型发出的评论时，按被回复评论 ID 和楼根交给原模型；模型停用、额度用完或接口失败时保留待处理，不切换到另一模型回答。
 
 ## 开始使用
 
@@ -99,7 +101,43 @@ npm run stop
 
 设置在 `.data/config.json`。示例见 `config.example.json`。`persona.md` 决定聊天口吻，每次启动读取。默认不是模仿主人本人，被问到身份时会如实说明。
 
-默认轮询间隔 15 秒（读取和生成回复的耗时另计）；每 5 分钟浏览最多 3 条视频；每条实际播放约 8 秒并抽 2 帧；每日最多 30 条视频。每个联系人每日最多 40 条回复，全局每日最多 80 条。日期按北京时间计算。`browse.interests` 影响 GPT 的判断口径，采集来源仍是该账号的推荐流，并非关键词搜索。
+默认私信轮询间隔 15 秒（读取和生成回复的耗时另计）；GPT 每 5 分钟浏览最多 3 条视频；每条实际播放约 8 秒并抽 2 帧；GPT 每日最多 15 条视频。DeepSeek 开启后每 35 分钟浏览最多 1 条，每日最多 5 条，播放时长、抽帧数和兴趣配置沿用 `browse`。每个联系人每日最多 40 条私信回复，全局每日最多 80 条，全部由 GPT 处理。日期按北京时间计算。`browse.interests` 影响模型的判断口径，采集来源仍是该账号的推荐流，并非关键词搜索。
+
+## 接入 DeepSeek
+
+在 `.env` 填入独立的 DeepSeek API 配置：
+
+```dotenv
+DEEPSEEK_API_KEY=你的DeepSeek密钥
+DEEPSEEK_MODEL=deepseek-flash
+DEEPSEEK_REASONING_EFFORT=low
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+```
+
+也可在数据目录保存权限为 `0600` 的 `deepseek.json`，字段为 `apiKey`、`model`、`reasoningEffort`、`baseUrl`，非空字段优先于 `.env`。它与 `openai.json` 完全分开，不借用对方凭证。当前本机已经配置，压缩包不含密钥。
+
+`config.json` 中增加：
+
+```json
+{
+  "deepseek": {
+    "enabled": true,
+    "browse": { "videosPerDay": 5, "videosPerRound": 1, "everyMinutes": 35 },
+    "engagement": { "enabled": true, "commentsPerDay": 5, "repliesPerDay": 10 }
+  }
+}
+```
+
+保存后 `npm run stop`，再 `npm run start:background`。发布包默认关闭 DeepSeek；用户已授权的本机配置已开启。DeepSeek 的公开评论设置继承 `engagement` 的字数、开关、信心阈值与冷却，可在 `deepseek.engagement` 单独覆盖。
+
+| 模型 | 每日视频 | 每日主动评论 | 每日评论回复 |
+|---|---:|---:|---:|
+| GPT-6.1 Terra | 15 | 5 | 20 |
+| DeepSeek Flash | 5 | 5 | 10 |
+
+以上均为上限；内容不适合评论或没有新互动时不凑数。两个模型共用主动评论的冷却记录，至少间隔 30 分钟。DeepSeek 的浏览间隔为 35 分钟，给每条新视频保留评论机会。
+
+DeepSeek 只收到它浏览的视频文案、抽样截图和相关公开评论；不会接收联系人名单、私信历史或私信人设。回复哪个模型的评论，就由哪个模型回答；无法归属的新作品留言等交给 GPT。旧版本的观看与评论记录视为 GPT，升级不重置当天计数。`npm run status` 的 `providers` 分别显示两个模型的计数与上限。
 
 暂停某个联系人：
 
@@ -118,8 +156,8 @@ node src/cli.mjs deny --id 'secUid'
   "enabled": true,
   "commentOnVideos": true,
   "replyToComments": true,
-  "commentsPerDay": 3,
-  "repliesPerDay": 10,
+  "commentsPerDay": 5,
+  "repliesPerDay": 20,
   "perRound": 1,
   "pollSeconds": 60,
   "commentCooldownMinutes": 30,
@@ -128,9 +166,9 @@ node src/cli.mjs deny --id 'secUid'
 }
 ```
 
-主动评论默认每天最多 3 条，每轮最多 1 条，两条主动评论至少间隔 30 分钟。评论回复默认每天最多 10 条，每 60 秒检查互动通知，处理时间另计。不同开关可分别关闭。修改后重启后台助手。
+GPT 主动评论默认每天最多 5 条，每轮最多 1 条，两条主动评论至少间隔 30 分钟。GPT 评论回复默认每天最多 20 条；DeepSeek 分别为 5 条和 10 条。每 60 秒检查互动通知，处理时间另计。不同开关可分别关闭。修改后重启后台助手。
 
-GPT 只生成公开语境下的简短文字，不使用私信历史或私人人设作为评论输入。证据不足、纯广告、争吵或需要使用者本人公开表态的内容跳过。评论不附带外部链接或主动 @。同一条收到的评论只回复一次；结果不确定时暂停公开评论，不自动重发，私信继续运行。
+两个模型只生成公开语境下的简短文字，不使用私信历史或私人人设作为评论输入。证据不足、纯广告、争吵或需要使用者本人公开表态的内容跳过。评论不附带外部链接或主动 @。同一条收到的评论只回复一次；结果不确定时暂停两个模型的公开评论，不自动重发，私信继续运行。
 
 新通知先按稳定评论 ID、作者和楼根定位原留言；原留言被删、正文变更或定位失败时保留待处理，不猜对象。抖音要求验证时需要回专用浏览器完成正常验证，程序不代过验证。
 
@@ -156,10 +194,11 @@ node src/cli.mjs outbox
 
 | 路径 | 内容 |
 |---|---|
-| `config.json` | 账号绑定、联系人和设置，不含 GPT 密钥 |
+| `config.json` | 账号绑定、联系人、两个模型的开关与配额，不含 API 密钥 |
+| `openai.json` / `deepseek.json` | 可选本机 API 凭证，独立保存，不随源码发布 |
 | `browser/` | 专用浏览器登录态 |
 | `state.json` | 消息去重、上下文、发送记录、观看记录 |
-| `comments.json` | 公开评论去重、互动通知基线、评论与回复发送记录 |
+| `comments.json` | 公开评论去重、互动通知基线、模型归属、评论与回复发送记录 |
 | `reports/日期.md` | 视频日报 |
 | `frames/` | 视频抽帧，启动时清理超过 7 天的文件 |
 | `browser.log` | 浏览器启动日志 |
@@ -184,7 +223,7 @@ npm run demo
 
 `demo` 用虚构联系人、视频和 GPT 替身演示“建立基线 → 浏览 → 收到消息 → 回复一次 → 再次轮询不重复”。不打开浏览器、不联网，也不访问真实账号。
 
-自动化测试覆盖私信与评论去重、重启恢复、配额与冷却、通知基线、楼根和回复对象、背景页面与通知弹层、停止信号、发送方识别以及 Responses API 请求结构。API 测试连接本机假服务，不会消耗真实 API 额度。
+自动化测试覆盖私信与评论去重、重启恢复、配额与冷却、通知基线、楼根和回复对象、背景页面与通知弹层、停止信号、发送方识别、两个模型的 Responses API 请求结构、独立计数、原模型回复归属和凭证隔离。自动化 API 测试使用假服务，不会消耗真实 API 额度。
 
 ## 当前边界
 
@@ -192,11 +231,13 @@ npm run demo
 - 主动浏览来源仍是推荐流，不做关键词搜索，不自动点赞、收藏或主动群发。公开评论受 `engagement` 开关和配额控制。
 - 判断主要来自文案和抽样画面，没有音频转写，不声称完整理解视频。语音消息、图片私信等非文字内容没有单独识别链路。
 - 自动回复需要能提取稳定消息 ID、确认消息发送方和联系人 ID；无法确认时不发送。会话列表虚拟化也可能使较远的联系人暂时无法定位。
-- 消息正文和上下文、视频文案与截图、相关公开评论会发送到配置的 GPT 接口用于处理；浏览器登录态不会作为模型输入，公开评论请求不包含私信历史。`.env` 与 `.data/` 不应提交或分享。
+- 私信正文和历史只发给 GPT；视频文案与截图、相关公开评论发送给处理这条视频或留言的模型。浏览器登录态不会作为模型输入，公开评论请求不包含私信历史。`.env` 与 `.data/` 不应提交或分享。
 - 使用抖音网页版自动化，登录、验证和账号限制由平台决定。遇到验证或账号不一致应回浏览器处理，程序没有绕过验证的实现。
 
-## OpenAI 文档与参考代码
+## API 文档与参考代码
 
 Responses API 的结构化输出与图像输入分别按 [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs) 和 [Images and vision](https://developers.openai.com/api/docs/guides/images-vision) 实现。默认模型能力见 [GPT-6.1 Terra](https://developers.openai.com/api/docs/models/gpt-6.1-terra)。模型可用性以你的 API 账户为准。
+
+DeepSeek 依据官方 [Responses API](https://api-docs.deepseek.com/api/create-response/) 和 [Vision](https://api-docs.deepseek.com/guides/vision/) 接入 `deepseek-flash`，使用其原生图片输入与 JSON schema，不把视频图片转交 GPT 代看。
 
 两个抖音参考项目的使用范围、提交和许可证见 `NOTICE.md`。

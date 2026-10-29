@@ -25,7 +25,7 @@ export function normalizeNotice(notice, account) {
   target.rootId = root || (Number(notice.type)===45 ? '' : cid);
   target.createTime ||= Number(notice.create_time || 0);
   // nid 在部分响应中是超出 JS 安全范围的整数；用字符串 cid 构成稳定去重键。
-  return { id: `${Number(notice.type)}:${videoId}:${cid}`, type: Number(notice.type), createdAt: Number(notice.create_time || 0), target, video: { id: videoId, desc: String(block.aweme?.desc || '').slice(0,2000), url: `https://www.douyin.com/video/${videoId}` }, parentText: String(block.reply_comment?.text || block.level1_comment?.text || '').slice(0,1000) };
+  return { id: `${Number(notice.type)}:${videoId}:${cid}`, type: Number(notice.type), createdAt: Number(notice.create_time || 0), replyToId: numericId(block.reply_comment?.cid), target, video: { id: videoId, desc: String(block.aweme?.desc || '').slice(0,2000), url: `https://www.douyin.com/video/${videoId}` }, parentText: String(block.reply_comment?.text || block.level1_comment?.text || '').slice(0,1000) };
 }
 const evaluate = (page, fn, arg) => page.ev(`(${fn.toString()})(${arg === undefined ? '' : JSON.stringify(arg)})`);
 const errorWithAttempt = (message, attempted, code = '') => Object.assign(new Error(message), { sendAttempted: attempted, code });

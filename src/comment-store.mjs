@@ -24,17 +24,17 @@ export class CommentStore {
   baseline(events) { this.data.initialized = true; this.markSeen(events.map(e => e.id)); }
   key(kind, videoId, targetId = '') { return kind === 'comment' ? `comment:${videoId}` : `reply:${videoId}:${targetId}`; }
   has(kind, videoId, targetId = '') { return this.data.actions.some(a => a.key === this.key(kind,videoId,targetId)); }
-  count(kind, today = dayKey()) { return this.data.actions.filter(a => a.kind === kind && a.day === today && COUNTED_COMMENT_STATES.includes(a.status)).length; }
-  quota(kind, cfg) { return Math.max(0, (kind === 'comment' ? cfg.commentsPerDay : cfg.repliesPerDay) - this.count(kind)); }
-  canComment(cfg, now = Date.now()) {
-    if (this.data.halted || !this.quota('comment', cfg)) return false;
+  count(kind, today = dayKey(), provider) { return this.data.actions.filter(a => a.kind === kind && a.day === today && (!provider || (a.provider || 'openai') === provider) && COUNTED_COMMENT_STATES.includes(a.status)).length; }
+  quota(kind, cfg, provider = 'openai') { return Math.max(0, (kind === 'comment' ? cfg.commentsPerDay : cfg.repliesPerDay) - this.count(kind, dayKey(), provider)); }
+  canComment(cfg, now = Date.now(), provider = 'openai') {
+    if (this.data.halted || !this.quota('comment', cfg, provider)) return false;
     const recent = this.data.actions.filter(a => a.kind === 'comment' && COUNTED_COMMENT_STATES.includes(a.status)).at(-1);
     return !recent || now - Date.parse(recent.sentAt || recent.updatedAt || recent.createdAt) >= cfg.commentCooldownMinutes * 60_000;
   }
-  draft(kind, video, target, decision) {
+  draft(kind, video, target, decision, { provider = 'openai', model = '' } = {}) {
     const key = this.key(kind, video.id, target?.id || '');
     const old = this.data.actions.find(a => a.key === key); if (old) return old;
-    const action = { id: randomUUID(), key, kind, videoId: video.id, targetId: target?.id || '', rootId: target?.rootId || '', targetAuthor: target?.authorSecUid || '', text: decision.text, reason: decision.reason, confidence: decision.confidence, status: 'draft', day: dayKey(), createdAt: new Date().toISOString() };
+    const action = { id: randomUUID(), key, kind, provider, model, videoId: video.id, targetId: target?.id || '', rootId: target?.rootId || '', targetAuthor: target?.authorSecUid || '', text: decision.text, reason: decision.reason, confidence: decision.confidence, status: 'draft', day: dayKey(), createdAt: new Date().toISOString() };
     this.data.actions.push(action); this.save(); return action;
   }
   transition(action, status, note = '', receipt = undefined) {

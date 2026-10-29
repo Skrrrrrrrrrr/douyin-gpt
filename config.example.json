@@ -5,7 +5,7 @@
     "enabled": true,
     "everyMinutes": 5,
     "videosPerRound": 3,
-    "videosPerDay": 30,
+    "videosPerDay": 15,
     "watchSeconds": 8,
     "framesPerVideo": 2,
     "interests": []
@@ -14,13 +14,18 @@
     "enabled": false,
     "commentOnVideos": true,
     "replyToComments": true,
-    "commentsPerDay": 3,
-    "repliesPerDay": 10,
+    "commentsPerDay": 5,
+    "repliesPerDay": 20,
     "perRound": 1,
     "pollSeconds": 60,
     "commentCooldownMinutes": 30,
     "maxChars": 100,
     "minConfidence": 0.7
+  },
+  "deepseek": {
+    "enabled": false,
+    "browse": { "videosPerDay": 5, "videosPerRound": 1, "everyMinutes": 35 },
+    "engagement": { "enabled": false, "commentsPerDay": 5, "repliesPerDay": 10 }
   },
   "reply": {
     "enabled": true,

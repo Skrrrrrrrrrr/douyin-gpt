@@ -38,8 +38,9 @@ async function main() {
     for (let i = 0; i < 150 && isWorker(meta); i++) await sleep(200);
     if (isWorker(meta)) throw new Error('助手还在结束当前操作，请稍后再次启动');
   } else if (isWorker(meta)) { console.log(`后台助手已运行（PID ${meta.pid}）`); return; }
-  readConfig(home);
+  const cfg = readConfig(home);
   if (!modelConfig().apiKey) throw new Error('请先配置 OPENAI_API_KEY');
+  if (cfg.deepseek.enabled && !modelConfig('deepseek').apiKey) throw new Error('请先配置 DEEPSEEK_API_KEY');
   if (existsSync(lockFile)) {
     const lock = read(lockFile);
     if (lock?.pid) {

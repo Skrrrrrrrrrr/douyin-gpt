@@ -23,8 +23,25 @@ export function writePrivate(file, value) {
   chmodSync(file, 0o600);
 }
 export function defaultConfig() { return JSON.parse(readFileSync(join(ROOT, 'config.example.json'), 'utf8')); }
+export const PROVIDERS = ['openai', 'deepseek'];
+export const providerLabel = provider => provider === 'deepseek' ? 'DeepSeek' : 'GPT';
+export function providerBrowse(cfg, provider = 'openai') {
+  if (provider === 'openai') return cfg.browse;
+  const settings = cfg.deepseek?.browse || defaultConfig().deepseek.browse;
+  return { ...cfg.browse, videosPerDay: settings.videosPerDay, videosPerRound: settings.videosPerRound, everyMinutes: settings.everyMinutes, enabled: Boolean(cfg.deepseek?.enabled && cfg.browse.enabled) };
+}
+export function providerEngagement(cfg, provider = 'openai') {
+  if (provider === 'openai') return cfg.engagement;
+  return { ...cfg.engagement, ...cfg.deepseek?.engagement, enabled: Boolean(cfg.deepseek?.enabled && cfg.deepseek?.engagement?.enabled) };
+}
 export function validateConfig(cfg) {
-  cfg.engagement = { ...defaultConfig().engagement, ...(cfg.engagement || {}) };
+  const defaults = defaultConfig();
+  cfg.engagement = { ...defaults.engagement, ...(cfg.engagement || {}) };
+  const ds = cfg.deepseek || {};
+  cfg.deepseek = { ...defaults.deepseek, ...ds,
+    browse: { ...defaults.deepseek.browse, ...(ds.browse || {}) },
+    engagement: { ...defaults.deepseek.engagement, ...(ds.engagement || {}) },
+  };
   const positive = (value, key, min, max) => {
     if (!Number.isSafeInteger(value) || value < min || value > max) throw new Error(`${key} 必须是 ${min}～${max} 之间的整数`);
   };
@@ -44,9 +61,14 @@ export function validateConfig(cfg) {
   positive(cfg.reply.maxChars, 'reply.maxChars', 1, 1000);
   positive(cfg.reply.perContactPerDay, 'reply.perContactPerDay', 0, 500);
   positive(cfg.reply.totalPerDay, 'reply.totalPerDay', 0, 1000);
-  for (const key of ['enabled', 'commentOnVideos', 'replyToComments']) if (typeof cfg.engagement[key] !== 'boolean') throw new Error(`engagement.${key} 必须是布尔值`);
-  for (const [key,min,max] of [['commentsPerDay',0,20],['repliesPerDay',0,50],['perRound',1,3],['pollSeconds',30,3600],['commentCooldownMinutes',1,1440],['maxChars',1,200]]) positive(cfg.engagement[key], `engagement.${key}`, min, max);
-  if (!Number.isFinite(cfg.engagement.minConfidence) || cfg.engagement.minConfidence < 0 || cfg.engagement.minConfidence > 1) throw new Error('engagement.minConfidence 必须在 0～1 之间');
+  if (typeof cfg.deepseek.enabled !== 'boolean' || typeof cfg.deepseek.engagement.enabled !== 'boolean') throw new Error('deepseek.enabled 和 deepseek.engagement.enabled 必须是布尔值');
+  for (const [key,min,max] of [['videosPerDay',0,300],['videosPerRound',1,10],['everyMinutes',1,1440]]) positive(cfg.deepseek.browse[key], `deepseek.browse.${key}`, min, max);
+  for (const provider of PROVIDERS) {
+    const settings = providerEngagement(cfg, provider);
+    for (const key of ['enabled', 'commentOnVideos', 'replyToComments']) if (typeof settings[key] !== 'boolean') throw new Error(`${provider}.engagement.${key} 必须是布尔值`);
+    for (const [key,min,max] of [['commentsPerDay',0,20],['repliesPerDay',0,50],['perRound',1,3],['pollSeconds',30,3600],['commentCooldownMinutes',1,1440],['maxChars',1,200]]) positive(settings[key], `${provider}.engagement.${key}`, min, max);
+    if (!Number.isFinite(settings.minConfidence) || settings.minConfidence < 0 || settings.minConfidence > 1) throw new Error(`${provider}.engagement.minConfidence 必须在 0～1 之间`);
+  }
   if (!Array.isArray(cfg.browse.interests) || cfg.browse.interests.some(x => typeof x !== 'string')) throw new Error('browse.interests 必须是字符串数组');
   if (!Array.isArray(cfg.reply.contacts)) throw new Error('reply.contacts 必须是数组');
   const seen = new Set();
@@ -70,17 +92,20 @@ export function initConfig(home) {
 export function dayKey(date = new Date()) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
 }
-export function modelConfig() {
-  const privateFile = join(homePath(), 'openai.json');
+export function modelConfig(provider = 'openai') {
+  if (!PROVIDERS.includes(provider)) throw new Error('未知模型服务');
+  const prefix = provider === 'deepseek' ? 'DEEPSEEK' : 'OPENAI';
+  const privateFile = join(homePath(), `${provider}.json`);
   let privateCfg = {};
   if (existsSync(privateFile)) {
     try { privateCfg = JSON.parse(readFileSync(privateFile, 'utf8')); }
-    catch { throw new Error('本机 openai.json 格式无效'); }
+    catch { throw new Error(`本机 ${provider}.json 格式无效`); }
   }
   return {
-    apiKey: privateCfg.apiKey || process.env.OPENAI_API_KEY || '',
-    model: privateCfg.model || process.env.OPENAI_MODEL || 'gpt-6.1-terra',
-    reasoningEffort: privateCfg.reasoningEffort || process.env.OPENAI_REASONING_EFFORT || 'low',
-    baseUrl: privateCfg.baseUrl || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1',
+    provider, label: providerLabel(provider), envPrefix: prefix,
+    apiKey: privateCfg.apiKey || process.env[`${prefix}_API_KEY`] || '',
+    model: privateCfg.model || process.env[`${prefix}_MODEL`] || (provider === 'deepseek' ? 'deepseek-flash' : 'gpt-6.1-terra'),
+    reasoningEffort: privateCfg.reasoningEffort || process.env[`${prefix}_REASONING_EFFORT`] || 'low',
+    baseUrl: privateCfg.baseUrl || process.env[`${prefix}_BASE_URL`] || (provider === 'deepseek' ? 'https://api.deepseek.com' : 'https://api.openai.com/v1'),
   };
 }

@@ -3,7 +3,7 @@ import { existsSync, readFileSync, readdirSync, statSync, unlinkSync } from 'nod
 import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
-import { ROOT, loadEnv, homePath, initConfig, readConfig, writePrivate, modelConfig, dayKey } from './config.mjs';
+import { ROOT, loadEnv, homePath, initConfig, readConfig, writePrivate, modelConfig, dayKey, PROVIDERS, providerBrowse, providerEngagement, providerLabel } from './config.mjs';
 import { Store, atomicJson, takeLock } from './store.mjs';
 import { Browser, findBrowser } from './browser.mjs';
 import { Douyin } from './douyin.mjs';
@@ -58,11 +58,13 @@ async function main() {
       ['Node.js ≥22', Number(process.versions.node.split('.')[0]) >= 22],
       ['Chrome / Edge', Boolean(findBrowser())],
       ['OPENAI_API_KEY 已设置', Boolean(modelConfig().apiKey)],
+      ...(cfg.deepseek.enabled ? [['DEEPSEEK_API_KEY 已设置', Boolean(modelConfig('deepseek').apiKey)]] : []),
       ['账号已绑定', Boolean(cfg.account.secUid)],
       ['自动回复名单已配置', cfg.reply.contacts.some(c => c.enabled)],
     ];
     for (const [name, ok] of checks) console.log(`${ok ? '✓' : '·'} ${name}`);
     console.log(`模型：${modelConfig().model}；数据目录：${home}`);
+    if (cfg.deepseek.enabled) console.log(`DeepSeek 模型：${modelConfig('deepseek').model}`);
     if (checks.some(([, ok]) => !ok)) process.exitCode = 1;
     return;
   }
@@ -79,12 +81,23 @@ async function main() {
       unresolved: store.data.outbox.filter(o => ['sending', 'uncertain'].includes(o.status)).map(o => ({ id: o.id, label: o.label, status: o.status })),
       lastBrowseAt: store.data.lastBrowseAt ? new Date(store.data.lastBrowseAt).toISOString() : null,
       comments: { enabled: cfg.engagement.enabled, postedToday: comments.count('comment'), repliedToday: comments.count('reply'), halted: comments.data.halted, inboxInitialized: comments.data.initialized },
+      providers: Object.fromEntries(PROVIDERS.map(provider => {
+        const browse = providerBrowse(cfg, provider), engagement = providerEngagement(cfg, provider);
+        return [provider, {
+          enabled: provider === 'openai' || cfg.deepseek.enabled,
+          model: modelConfig(provider).model,
+          videosToday: store.videoCount(dayKey(), provider), videosPerDay: browse.videosPerDay,
+          commentsToday: comments.count('comment', dayKey(), provider), commentsPerDay: engagement.commentsPerDay,
+          commentRepliesToday: comments.count('reply', dayKey(), provider), commentRepliesPerDay: engagement.repliesPerDay,
+        }];
+      })),
     }, null, 2));
     return;
   }
   if (!['login', 'import-chrome', 'contacts', 'allow', 'deny', 'once', 'start', 'resolve', 'comments-resolve', 'browser-close'].includes(command)) throw new Error(`未知命令 ${command}，运行 node src/cli.mjs help 查看用法`);
   if (command === 'start' && !args.includes('--live')) throw new Error('持续自动回复使用 start --live；先预览可用 once');
   if (['once', 'start'].includes(command) && !modelConfig().apiKey) throw new Error('请先在项目 .env 填 OPENAI_API_KEY；不需要把密钥发到聊天里');
+  if (['once', 'start'].includes(command) && cfg.deepseek.enabled && !modelConfig('deepseek').apiKey) throw new Error('请先在本机配置 DEEPSEEK_API_KEY，或关闭 deepseek.enabled');
   const release = takeLock(home, { runtimeId: arg('--runtime-id') || '' });
   let browser;
   let closeBrowser = false;
@@ -189,10 +202,18 @@ async function main() {
     messenger.signal = controller.signal;
     const gpt = new Gpt(modelConfig());
     gpt.signal = controller.signal;
-    const engagement = new CommentAutomation({home,cfg,gpt,comments:new Comments(home,browser),dy,store,live:args.includes('--live'),log});
-    const engine = new Engine({ home, cfg, store, gpt, dy, messenger, engagement, live: args.includes('--live'), log });
+    const models = { openai: gpt };
+    if (cfg.deepseek.enabled) {
+      models.deepseek = new Gpt(modelConfig('deepseek'));
+      models.deepseek.signal = controller.signal;
+    }
+    const engagement = new CommentAutomation({home,cfg,gpt,models,comments:new Comments(home,browser),dy,store,live:args.includes('--live'),log});
+    const engine = new Engine({ home, cfg, store, gpt, models, dy, messenger, engagement, live: args.includes('--live'), log });
     log(`${args.includes('--live') ? '正式运行' : '预览模式，不发消息'}；名单 ${cfg.reply.contacts.filter(c => c.enabled).length} 人`);
-    log(`公开评论：${cfg.engagement.enabled&&cfg.engagement.commentOnVideos?'开':'关'}（${cfg.engagement.commentsPerDay}/天）；评论回复：${cfg.engagement.enabled&&cfg.engagement.replyToComments?'开':'关'}（${cfg.engagement.repliesPerDay}/天）`);
+    for (const provider of PROVIDERS.filter(p => models[p])) {
+      const browse = providerBrowse(cfg,provider), settings = providerEngagement(cfg,provider);
+      log(`[${providerLabel(provider)} / ${models[provider].config.model}] 视频 ${browse.videosPerDay}/天；公开评论：${settings.enabled&&settings.commentOnVideos?'开':'关'}（${settings.commentsPerDay}/天）；评论回复：${settings.enabled&&settings.replyToComments?'开':'关'}（${settings.repliesPerDay}/天）`);
+    }
     try {
       if (command === 'start') await engine.run(controller.signal);
       else await engine.once(controller.signal);

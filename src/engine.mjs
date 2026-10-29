@@ -1,6 +1,6 @@
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { dayKey } from './config.mjs';
+import { dayKey, PROVIDERS, providerBrowse, providerEngagement, providerLabel } from './config.mjs';
 import { sleep } from './browser.mjs';
 import { StopRequired } from './douyin.mjs';
 
@@ -14,8 +14,9 @@ export function unanswered(messages) {
   return tail.filter(m => m.from === 'them' && m.id && (m.text || m.item));
 }
 export class Engine {
-  constructor({ home, cfg, store, gpt, dy, messenger, engagement, live = false, log = console.log }) {
+  constructor({ home, cfg, store, gpt, models = {}, dy, messenger, engagement, live = false, log = console.log }) {
     Object.assign(this, { home, cfg, store, gpt, dy, messenger, engagement, live, log });
+    this.models = { openai: gpt, ...models };
     this.previews = [];
     this.previewedInputs = new Map();
   }
@@ -109,48 +110,59 @@ export class Engine {
   }
   report() {
     const videos = this.store.data.videos.filter(v => v.day === dayKey());
-    const text = [`# GPT 刷抖音 · ${dayKey()}`, '', '> 判断依据：文案和抽样画面；本版没有音频转写。', '', ...videos.flatMap(v => [
+    const text = [`# 抖音浏览记录 · ${dayKey()}`, '', '> 判断依据：文案和抽样画面；本版没有音频转写。', '', ...videos.flatMap(v => [
       `## ${v.id}`, `${v.desc.replace(/\n/g, ' ')} · ${v.author}`, '', v.url, '',
+      `模型：${providerLabel(v.provider)}${v.model ? `（${v.model}）` : ''}`,
       `记录：${v.analysis.summary}`, `证据：${v.analysis.evidence}`, `推荐：${v.analysis.recommend ? '是' : '否'} · 把握：${v.analysis.confidence}`, '',
     ])].join('\n');
     writeFileSync(join(this.home, 'reports', `${dayKey()}.md`), text, { mode: 0o600 });
   }
-  async browseRound(signal) {
-    if (!this.cfg.browse.enabled || this.store.videoCount() >= this.cfg.browse.videosPerDay) return;
+  async browseRound(signal, provider = 'openai') {
+    const browse = providerBrowse(this.cfg, provider), engagement = providerEngagement(this.cfg, provider);
+    const model = this.models[provider];
+    if (!model || !browse.enabled || this.store.videoCount(dayKey(), provider) >= browse.videosPerDay) return;
     await this.verifyAccount();
     const known = new Set(this.store.data.videos.map(v => v.id));
-    const remaining = Math.min(this.cfg.browse.videosPerRound, this.cfg.browse.videosPerDay - this.store.videoCount());
+    const remaining = Math.min(browse.videosPerRound, browse.videosPerDay - this.store.videoCount(dayKey(), provider));
     const videos = (await this.dy.feed({ exclude: [...known], limit: remaining })).filter(v => !known.has(v.id)).slice(0, remaining);
     let commented=0;
     for (const video of videos) {
       if (signal?.aborted) break;
       try {
-        const frames = await this.dy.watch(video, this.cfg.browse);
-        const analysis = await this.gpt.analyze(video, frames, this.cfg.browse.interests);
-        this.store.addVideo(video, analysis);
+        const frames = await this.dy.watch(video, browse);
+        const analysis = await model.analyze(video, frames, browse.interests);
+        this.store.addVideo(video, analysis, { provider, model: model.config?.model || '' });
         this.report();
-        this.log(`已浏览 ${video.id}，${analysis.recommend ? '值得看' : '已记录'}`);
-        if(this.engagement&&commented<this.cfg.engagement.perRound){
-          try{const action=await this.engagement.onVideo(video,analysis,signal);if(action&&['accepted','sent'].includes(action.status))commented++;}
-          catch(error){this.log(`视频评论 ${video.id}：${error.message}`);}
+        this.log(`[${providerLabel(provider)}] 已浏览 ${video.id}，${analysis.recommend ? '值得看' : '已记录'}`);
+        if(this.engagement&&commented<engagement.perRound){
+          try{const action=await this.engagement.onVideo(video,analysis,signal,provider);if(action&&['accepted','sent'].includes(action.status))commented++;}
+          catch(error){this.log(`[${providerLabel(provider)}] 视频评论 ${video.id}：${error.message}`);}
         }
       } catch (error) {
         if (error instanceof StopRequired) throw error;
-        this.log(`视频 ${video.id}：${error.message}`);
+        this.log(`[${providerLabel(provider)}] 视频 ${video.id}：${error.message}`);
       }
       if (!signal?.aborted) await this.pollReplies();
     }
-    this.store.data.lastBrowseAt = Date.now();
-    this.store.save();
+    this.store.markBrowsed(provider);
   }
-  async once(signal) { this.signal = signal; await this.pollReplies(); if (!signal?.aborted) await this.engagement?.poll(signal,{force:true});if (!signal?.aborted) await this.browseRound(signal); }
+  async once(signal) {
+    this.signal = signal;
+    await this.pollReplies();
+    if (!signal?.aborted) await this.engagement?.poll(signal,{force:true});
+    for (const provider of PROVIDERS) if (!signal?.aborted) await this.browseRound(signal,provider);
+  }
   async run(signal) {
     this.signal = signal;
     while (!signal.aborted) {
       await this.pollReplies();
       if(!signal.aborted)await this.engagement?.poll(signal);
       if (signal.aborted) break;
-      if (Date.now() - this.store.data.lastBrowseAt >= this.cfg.browse.everyMinutes * 60_000) await this.browseRound(signal);
+      for (const provider of PROVIDERS) {
+        if (signal.aborted) break;
+        const browse = providerBrowse(this.cfg, provider);
+        if (Date.now() - this.store.lastBrowseAt(provider) >= browse.everyMinutes * 60_000) await this.browseRound(signal,provider);
+      }
       for (let i = 0; i < this.cfg.reply.pollSeconds && !signal.aborted; i++) await sleep(1000);
     }
   }

@@ -95,11 +95,17 @@ export class Store {
     Object.assign(item, next);
     this.save();
   }
-  addVideo(video, analysis) {
-    this.data.videos.push({ ...video, analysis, day: dayKey(), watchedAt: new Date().toISOString() });
+  addVideo(video, analysis, { provider = 'openai', model = '' } = {}) {
+    this.data.videos.push({ ...video, analysis, provider, model, day: dayKey(), watchedAt: new Date().toISOString() });
     this.data.videos = this.data.videos.slice(-1000);
     this.save();
   }
-  recentVideos() { return this.data.videos.slice(-8).map(v => ({ id: v.id, desc: v.desc, url: v.url, analysis: v.analysis })); }
-  videoCount(today = dayKey()) { return this.data.videos.filter(v => v.day === today).length; }
+  recentVideos(provider = 'openai') { return this.data.videos.filter(v => (v.provider || 'openai') === provider).slice(-8).map(v => ({ id: v.id, desc: v.desc, url: v.url, analysis: v.analysis })); }
+  videoCount(today = dayKey(), provider = 'openai') { return this.data.videos.filter(v => v.day === today && (v.provider || 'openai') === provider).length; }
+  lastBrowseAt(provider = 'openai') { return provider === 'openai' ? this.data.lastBrowseAt || 0 : this.data.browseAt?.[provider] || 0; }
+  markBrowsed(provider = 'openai', now = Date.now()) {
+    if (provider === 'openai') this.data.lastBrowseAt = now;
+    else { this.data.browseAt ||= {}; this.data.browseAt[provider] = now; }
+    this.save();
+  }
 }
