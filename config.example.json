@@ -2,7 +2,7 @@
   "account": { "douyinId": "", "secUid": "" },
   "browser": { "headless": false },
   "journal": { "enabled": true, "refreshMinutes": 30, "outputDir": "" },
-  "video": { "enabled": false, "hour": 21, "minute": 0, "python": "python3", "outputDir": "", "speechModel": "gpt-realtime-2.1-mini", "voices": { "openai": "coral", "deepseek": "shimmer" } },
+  "video": { "enabled": false, "hour": 21, "minute": 0, "python": "python3", "outputDir": "", "speechModel": "gpt-realtime-2.1-mini", "voices": { "openai": "coral", "deepseek": "shimmer" }, "voiceProfiles": {} },
   "browse": {
     "enabled": true,
     "everyMinutes": 5,

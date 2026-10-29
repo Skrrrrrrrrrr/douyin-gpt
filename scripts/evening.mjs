@@ -12,7 +12,7 @@ import {Publisher} from '../src/publisher.mjs';
 const exec=promisify(execFile);loadEnv();
 const bg=async command=>(await exec(process.execPath,[join(ROOT,'scripts/background.mjs'),command],{cwd:ROOT,timeout:65000})).stdout;
 async function main(){
- const home=homePath(),cfg=readConfig(home),day=dayKey(),live=process.argv.includes('--live'),schedule=process.argv.includes('--schedule');
+ const home=homePath(),cfg=readConfig(home),day=dayKey(),live=process.argv.includes('--live'),schedule=process.argv.includes('--schedule'),readyOnly=process.argv.includes('--ready-only');
  if(!cfg.video.enabled)throw new Error('每晚视频功能未启用');
  const record=join(home,'video',day,'episode.json');
  if(existsSync(record)){const old=JSON.parse(readFileSync(record,'utf8'));if(['published','scheduled','submitted'].includes(old.status)){console.log(JSON.stringify({status:old.status,day,title:old.title,scheduledAt:old.scheduledAt,note:'本日已有视频，不重复发布'}));return;}if(['publishing','uncertain'].includes(old.status))throw new Error('本日发布结果待核对，不自动重发');}
@@ -22,8 +22,9 @@ async function main(){
  try{
   if(running)console.log((await bg('stop')).trim());
   release=takeLock(home);
-  const models={openai:new Gpt(modelConfig()),deepseek:new Gpt(modelConfig('deepseek'))};
-  let state=await buildEpisode({home,cfg,models,day});
+  let state;
+  if(readyOnly){state=JSON.parse(readFileSync(record,'utf8'));if(state.status!=='rendered'||!existsSync(state.videoPath))throw new Error('没有可以直接提交的已完成视频');if(!['openai','deepseek'].every(p=>state.voiceProfiles?.[p]===cfg.video.voiceProfiles?.[p]))throw new Error('成片音色与当前选择不一致，停止提交');}
+  else{const models={openai:new Gpt(modelConfig()),deepseek:new Gpt(modelConfig('deepseek'))};state=await buildEpisode({home,cfg,models,day});}
   if(live){browser=new Browser(home);await browser.start();state=await new Publisher(home,cfg,browser).publish(day,{live:true,at:schedule?`${day} ${String(cfg.video.hour).padStart(2,'0')}:${String(cfg.video.minute).padStart(2,'0')}`:undefined});}
   console.log(JSON.stringify({day,status:state.status,title:state.title,videoPath:state.videoPath,platformUrl:state.platformUrl,scheduledAt:state.scheduledAt},null,2));
  }finally{browser?.disconnect();release?.();if(running)console.log((await bg('start')).trim());}

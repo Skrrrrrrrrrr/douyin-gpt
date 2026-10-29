@@ -1,6 +1,6 @@
 {
   "name": "douyin-gpt",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "description": "Mac 上的 GPT / DeepSeek 抖音助手：刷视频、关键词路由回复、每日日志和双人配音晚报",

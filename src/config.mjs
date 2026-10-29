@@ -36,7 +36,7 @@ export function providerEngagement(cfg, provider = 'openai') {
 }
 export function validateConfig(cfg) {
   const defaults = defaultConfig();
-  cfg.video = { ...defaults.video, ...(cfg.video || {}), voices: { ...defaults.video.voices, ...(cfg.video?.voices || {}) } };
+  cfg.video = { ...defaults.video, ...(cfg.video || {}), voices: { ...defaults.video.voices, ...(cfg.video?.voices || {}) }, voiceProfiles: { ...(cfg.video?.voiceProfiles || {}) } };
   cfg.journal = { ...defaults.journal, ...(cfg.journal || {}) };
   cfg.engagement = { ...defaults.engagement, ...(cfg.engagement || {}) };
   const ds = cfg.deepseek || {};
@@ -74,6 +74,7 @@ export function validateConfig(cfg) {
   for(const key of ['python','speechModel'])if(typeof cfg.video[key]!=='string'||!cfg.video[key].trim())throw new Error(`video.${key} 不能为空`);
   if(typeof cfg.video.outputDir!=='string'||cfg.video.outputDir&&resolve(cfg.video.outputDir)!==cfg.video.outputDir)throw new Error('video.outputDir 必须为空或绝对路径');
   for(const provider of PROVIDERS)if(typeof cfg.video.voices[provider]!=='string'||!cfg.video.voices[provider])throw new Error('视频配音必须配置两个声音');
+  for(const provider of PROVIDERS){const id=cfg.video.voiceProfiles[provider];if(id!==undefined&&(typeof id!=='string'||!/^[A-D]$/i.test(id)))throw new Error('video.voiceProfiles 需要使用 A、B、C 或 D');if(id)cfg.video.voiceProfiles[provider]=id.toUpperCase();}
   if (typeof cfg.journal.outputDir !== 'string' || (cfg.journal.outputDir && resolve(cfg.journal.outputDir) !== cfg.journal.outputDir)) throw new Error('journal.outputDir 必须为空或绝对路径');
   for (const [key,min,max] of [['videosPerDay',0,300],['videosPerRound',1,10],['everyMinutes',1,1440]]) positive(cfg.deepseek.browse[key], `deepseek.browse.${key}`, min, max);
   for (const provider of PROVIDERS) {
