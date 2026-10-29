@@ -1,5 +1,7 @@
 # douyin-gpt
 
+各版本保存在 `release/v版本号` 分支与同名版本标签中。历史版本和自动创建版本分支的流程见 [版本发布](RELEASING.md)。
+
 在 Mac 上运行的 GPT / DeepSeek 抖音助手：登录自己的抖音账号，主动浏览推荐视频、发表评论、回复新评论，分别生成每日日志，并按关键词选择 GPT 或 DeepSeek 回复指定联系人的新私信。
 
 这是 0.7.0 命令行版本。Node.js 22 及以上，机器已有 Chrome 或 Edge 即可；使用一个轻量 Node.js 依赖 `ws`；基础浏览和聊天不需要 DSH、Windows OCR 或下载 Chromium。视频功能另需 Python、Pillow 和 FFmpeg。两个服务均使用各自的 Responses API；默认模型为 `gpt-6.1-terra` 和支持图像输入的 `deepseek-flash`。

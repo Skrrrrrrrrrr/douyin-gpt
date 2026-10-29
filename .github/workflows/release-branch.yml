@@ -1,0 +1,44 @@
+name: 创建版本分支
+
+'on':
+  push:
+    branches: [main]
+    paths: [package.json]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-branches
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+      - name: 检查发布内容
+        run: node scripts/check-release.mjs
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run check
+      - run: npm test
+      - name: 保留版本分支与标签
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(node -p "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).version")"
+          branch="release/v${version}"
+          existing="$(git ls-remote --heads origin "refs/heads/${branch}")"
+          if [[ -n "$existing" ]]; then
+            echo "已存在 ${branch}，保留原版本。" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git push --atomic origin "HEAD:refs/heads/${branch}" "HEAD:refs/tags/v${version}"
+          echo "已创建 ${branch} 和 v${version}。" >> "$GITHUB_STEP_SUMMARY"
