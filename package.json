@@ -1,0 +1,24 @@
+{
+  "name": "douyin-gpt",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Mac 上运行的 GPT 抖音助手：主动浏览视频，自动回复指定联系人",
+  "engines": { "node": ">=22" },
+  "bin": { "douyin-gpt": "./src/cli.mjs" },
+  "scripts": {
+    "init": "node src/cli.mjs init",
+    "login": "node src/cli.mjs login",
+    "doctor": "node src/cli.mjs doctor",
+    "contacts": "node src/cli.mjs contacts",
+    "preview": "node src/cli.mjs once",
+    "start": "node src/cli.mjs start --live",
+    "start:background": "node scripts/background.mjs start",
+    "stop": "node scripts/background.mjs stop",
+    "status:background": "node scripts/background.mjs status",
+    "status": "node src/cli.mjs status",
+    "demo": "node scripts/demo.mjs",
+    "test": "node --test test/*.test.mjs",
+    "check": "node scripts/check.mjs"
+  }
+}

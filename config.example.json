@@ -1,0 +1,21 @@
+{
+  "account": { "douyinId": "", "secUid": "" },
+  "browser": { "headless": false },
+  "browse": {
+    "enabled": true,
+    "everyMinutes": 5,
+    "videosPerRound": 3,
+    "videosPerDay": 30,
+    "watchSeconds": 8,
+    "framesPerVideo": 2,
+    "interests": []
+  },
+  "reply": {
+    "enabled": true,
+    "pollSeconds": 15,
+    "maxChars": 240,
+    "perContactPerDay": 40,
+    "totalPerDay": 80,
+    "contacts": []
+  }
+}

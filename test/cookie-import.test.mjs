@@ -1,0 +1,32 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { copyDouyinCookies } from '../src/import-chrome.mjs';
+
+test('Chrome 登录态迁移只复制抖音域名，保留加密字段，不修改来源', async t => {
+  const { DatabaseSync } = await import('node:sqlite');
+  const dir = mkdtempSync(join(tmpdir(), 'dy-cookie-test-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const sourceFile = join(dir, 'source.sqlite'), targetFile = join(dir, 'target.sqlite');
+  const source = new DatabaseSync(sourceFile), target = new DatabaseSync(targetFile);
+  t.after(() => { source.close(); target.close(); });
+  const schema = 'CREATE TABLE cookies (host_key TEXT, name TEXT, value TEXT, encrypted_value BLOB, creation_utc INTEGER, UNIQUE(host_key,name))';
+  source.exec(schema); target.exec(schema);
+  const insert = source.prepare('INSERT INTO cookies VALUES (?,?,?,?,?)');
+  insert.run('.douyin.com', 'sessionid', '', Buffer.from('fake-encrypted-session'), 13437729561535231n);
+  insert.run('www.douyin.com', 'test', '', Buffer.from('fake-encrypted-test'), 13437729561535232n);
+  insert.run('.other.example', 'secret', '', Buffer.from('must-not-copy'), 1n);
+  insert.run('.evil-douyin.com', 'sessionid', '', Buffer.from('must-not-copy'), 1n);
+  const result = await copyDouyinCookies(sourceFile, targetFile);
+  assert.equal(result.imported, 2);
+  assert.equal(source.prepare('SELECT COUNT(*) AS n FROM cookies').get().n, 4);
+  const select = target.prepare('SELECT * FROM cookies'); select.setReadBigInts(true);
+  const copied = select.all();
+  assert.equal(copied.length, 2);
+  assert.ok(copied.every(row => ['.douyin.com', 'www.douyin.com'].includes(row.host_key)));
+  assert.equal(Buffer.from(copied.find(row => row.name === 'sessionid').encrypted_value).toString(), 'fake-encrypted-session');
+  assert.equal(copied.find(row => row.name === 'sessionid').creation_utc, 13437729561535231n);
+  await assert.rejects(copyDouyinCookies(sourceFile, sourceFile), /不能相同/);
+});
