@@ -1,0 +1,116 @@
+{
+  "kind": "douyin-dashboard-static",
+  "version": "0.11.1",
+  "files": [
+    {
+      "path": ".nojekyll",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "HOSTING.md",
+      "bytes": 311,
+      "sha256": "74442e87532d1366484d22768cdd0c190d26fcf63fca3e9ece9aa54c1315526b"
+    },
+    {
+      "path": "brand/liuzuo-illustration.png",
+      "bytes": 2260747,
+      "sha256": "6421d5f71f35de979a5c8f7d585cd030cf5672d2e2e70783467f88139d889a15"
+    },
+    {
+      "path": "brand/liuzuo-mark.png",
+      "bytes": 1704535,
+      "sha256": "8b354b9b3754bc9f41f98fed35d314d70399e511e97d0a6d17088a39171fb675"
+    },
+    {
+      "path": "brand/logo.png",
+      "bytes": 60956,
+      "sha256": "aec462703765e6b9b1c9fd5f2a8f9852936da5359ab70ff997c86a1170099692"
+    },
+    {
+      "path": "brand/logo.svg",
+      "bytes": 1464,
+      "sha256": "efc3488591b157b15f229d8fbf4f7e5a71c981b0a79d9b9b010412834c5f6736"
+    },
+    {
+      "path": "connection.js",
+      "bytes": 6646,
+      "sha256": "f4f4f1308d6f82cdb5162546d46a18745d69fd5aa4ea03c8a84197709b177912"
+    },
+    {
+      "path": "fonts/OFL.txt",
+      "bytes": 4388,
+      "sha256": "7ec15e79c59bc14b86436a17e5eb7926b46cbcaeb08e1a7e6c110b415e6eb2a2"
+    },
+    {
+      "path": "fonts/Outfit-OFL.txt",
+      "bytes": 4388,
+      "sha256": "e2a6bbb2589b85bac1690ec8f220b22a9c3af9bfda56df6391f7ab491c7a039f"
+    },
+    {
+      "path": "fonts/dm-sans-400.ttf",
+      "bytes": 48280,
+      "sha256": "b0ae3e89a7d3ef2b1838bb4b1ceb0b17cc3435af061eee809d76aa623ff116e9"
+    },
+    {
+      "path": "fonts/dm-sans-500.ttf",
+      "bytes": 48308,
+      "sha256": "376427b5322148d8de1e03f263bcca4935a2d60ba71d9f94f4947ab664c711ae"
+    },
+    {
+      "path": "fonts/dm-sans-600.ttf",
+      "bytes": 48280,
+      "sha256": "b79a2ea7a38f33fd96a282fadb9ce97626bb0724a44d21075859f0e50239993a"
+    },
+    {
+      "path": "fonts/dm-sans-700.ttf",
+      "bytes": 48200,
+      "sha256": "2a8e7f713ee79fbccdef3cef5c787aff47580299f7da60144961e7db2ec08211"
+    },
+    {
+      "path": "fonts/dm-sans.woff2",
+      "bytes": 48200,
+      "sha256": "2a8e7f713ee79fbccdef3cef5c787aff47580299f7da60144961e7db2ec08211"
+    },
+    {
+      "path": "fonts/outfit-variable.ttf",
+      "bytes": 110884,
+      "sha256": "fc7287273e66929776e2ba54f144fe699080bec29f61bf649d70d871468aeade"
+    },
+    {
+      "path": "host/deepseek.png",
+      "bytes": 2403795,
+      "sha256": "65e319baae7d76774f37047f7821858a59aee10e1a2bd4428b1247c186d8ee24"
+    },
+    {
+      "path": "host/gpt.png",
+      "bytes": 2409578,
+      "sha256": "3f54ded65cf7d559693e3f50df2a80ad8deb834208553a28399747db8e5edef1"
+    },
+    {
+      "path": "index.html",
+      "bytes": 947286,
+      "sha256": "581540e67b04a72b2175d6335c9a010272494358395abadc0a591076f628f6df"
+    },
+    {
+      "path": "login.css",
+      "bytes": 11124,
+      "sha256": "a30312c6b32099dbd32be81d50d046155ad2b888dd09098a957c2d75b46ae1f5"
+    },
+    {
+      "path": "login.html",
+      "bytes": 4560,
+      "sha256": "7790bc7f03e9b889da786939207379e251f75ef32114e31e555b60f51de561fe"
+    },
+    {
+      "path": "pages-login.js",
+      "bytes": 5554,
+      "sha256": "634c1c31cbbd90d4cb86388032e044e05bf789175a0639d5438a4aa2f557f266"
+    },
+    {
+      "path": "pages.css",
+      "bytes": 161,
+      "sha256": "f090284b2cc099d064c5c55d9822f8adec096c771b392b351004a0610f9f0dd4"
+    }
+  ]
+}

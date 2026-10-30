@@ -1,0 +1,45 @@
+<!doctype html>
+<html data-hosted-dashboard="true" lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; script-src 'self' ; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' blob: data:; media-src 'self' blob:; connect-src 'self' http://127.0.0.1:* http://localhost:* https://127.0.0.1:* https://localhost:*; form-action http://127.0.0.1:* http://localhost:* https://127.0.0.1:* https://localhost:*"><meta name="referrer" content="no-referrer">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="application-name" content="留座中转站">
+  <meta name="color-scheme" content="light">
+  <link rel="icon" type="image/png" href="./brand/liuzuo-mark.png">
+  <title>登录 · 留座中转站</title>
+  <link rel="stylesheet" href="./login.css">
+  <script type="module" src="./pages-login.js"></script>
+<link rel="stylesheet" href="./pages.css"></head>
+<body>
+  <header class="login-navigation">
+    <a class="brand" href="./login.html" aria-label="留座中转站登录">
+      <img class="brand-mark" src="./brand/liuzuo-mark.png" width="40" height="40" alt="" aria-hidden="true">
+      <div>留座中转站<span>龙娘与大肥鱼的日常</span></div>
+    </a>
+    <span class="local-access"><i></i>只在这台 Mac 上运行</span>
+  </header>
+  <main class="login-shell overflow-x-hidden w-full max-w-full">
+    <section class="login-story" aria-labelledby="studio-title">
+      <h1 id="studio-title" class="max-w-6xl">给你<span class="inline-portraits" aria-hidden="true"><img src="./host/gpt.png" alt=""><img src="./host/deepseek.png" alt=""></span>留个位置，<br>一起把日常过好。</h1>
+      <p class="story-description">一个会催你做事，一个会和你分享。<br>两位室友，一起认真过好今天。</p>
+      <div class="login-scene station-scene" aria-hidden="true"><img class="station-illustration" src="./brand/liuzuo-illustration.png" alt=""></div>
+      <p class="story-caption">灯亮着，位置也给你留着。</p>
+    </section>
+    <section class="login-panel" aria-labelledby="login-title">
+      <header><h2 id="login-title">登录后台管理</h2><p id="login-description">登录后，看看两位室友今天在忙什么。</p></header>
+      <form id="login-form" method="post" action="http://127.0.0.1:3146/api/auth/login">
+        <div class="field" id="backend-field"><label for="backend-url">本机服务地址</label><input id="backend-url" type="url" autocomplete="off" spellcheck="false" value="http://127.0.0.1:3146" required><p class="field-hint">请在运行助手的这台 Mac 打开，并允许浏览器访问本地网络。</p></div><div id="username-field" class="field"><label for="username">本机管理员账号</label><input id="username" name="username" autocomplete="username" value="admin" maxlength="64" required></div>
+        <div class="field"><label for="password" id="password-label">密码</label><div class="password-input"><input id="password" name="password" type="password" autocomplete="current-password" maxlength="128" required><button type="button" id="toggle-password" aria-label="显示密码" aria-pressed="false">显示</button></div></div>
+        <div id="new-password-field" class="field" hidden><label for="new-password">新密码</label><input id="new-password" name="newPassword" type="password" autocomplete="new-password" minlength="12" maxlength="128"><p class="field-hint">12–128 个字符，请使用与其他网站不同的密码。</p></div>
+        <div id="confirm-password-field" class="field" hidden><label for="confirm-password">确认新密码</label><input id="confirm-password" type="password" autocomplete="new-password" minlength="12" maxlength="128"></div>
+        <p id="form-message" class="form-message" role="alert" hidden></p>
+        <button type="submit" id="submit-button" class="primary-button">连接并登录</button>
+      </form>
+      <p id="initial-hint" class="initial-hint">首次登录：在本机数据目录查看初始密码。<span class="filename">dashboard-initial-password.txt</span></p>
+      <button id="back-login" type="button" class="text-button" hidden>退出并返回登录</button>
+      <noscript><p class="form-message">请启用 JavaScript 后登录。</p></noscript>
+    </section>
+  </main>
+  <footer class="login-footer"><span>留座中转站 · 给你留个位置</span><span>本机数据 · 登录后方可访问</span></footer>
+</body>
+</html>
