@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" fill="none" role="img" aria-labelledby="logo-title logo-description">
+  <title id="logo-title">大肥鱼 · 双鱼回声</title>
+  <desc id="logo-description">蓝紫两尾鱼相向环绕，代表 GPT 与 DeepSeek 的观察、对话和陪伴。</desc>
+  <defs>
+    <linearGradient id="violet" x1="20" y1="16" x2="77" y2="46" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#B28AE8"/>
+      <stop offset=".48" stop-color="#9470D6"/>
+      <stop offset="1" stop-color="#7654B6"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="20" y1="16" x2="77" y2="46" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#96D7EC"/>
+      <stop offset=".48" stop-color="#72B6DF"/>
+      <stop offset="1" stop-color="#5185CA"/>
+    </linearGradient>
+    <path id="fish" d="M23 31C28 18 43 12 57 16C71 20 81 31 83 44C76 37 68 34 61 36C52 38 46 44 36 44C30 44 25 42 22 39L12 44.5C10 45.6 9 44.5 10 42.5L14 34L10 27C8.9 25 10.1 23.9 12.2 25L23 31Z"/>
+  </defs>
+  <use href="#fish" fill="url(#violet)"/>
+  <path d="M31 25.5C37 20.3 45 19 51 21" stroke="#E4D1FF" stroke-width="2.6" stroke-linecap="round"/>
+  <circle cx="65" cy="27.5" r="3.5" fill="white"/>
+  <g transform="rotate(180 48 48)">
+    <use href="#fish" fill="url(#blue)"/>
+    <path d="M31 25.5C37 20.3 45 19 51 21" stroke="#D9F4FF" stroke-width="2.6" stroke-linecap="round"/>
+    <circle cx="65" cy="27.5" r="3.5" fill="white"/>
+  </g>
+</svg>

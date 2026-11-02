@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "name": "留座中转站",
+  "shortName": "留座",
+  "descriptor": "双 AI 日常工作台",
+  "tagline": "给你留个位置",
+  "mark": "/brand/liuzuo-mark.png",
+  "illustration": "/brand/liuzuo-illustration.png",
+  "characters": [
+    {
+      "provider": "openai",
+      "name": "GPT 龙娘",
+      "card": "assets/characters/openai.json"
+    },
+    {
+      "provider": "deepseek",
+      "name": "DeepSeek 大肥鱼",
+      "card": "assets/characters/deepseek.json"
+    }
+  ]
+}

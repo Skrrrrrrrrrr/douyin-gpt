@@ -1,0 +1,42 @@
+{
+  "license": "MIT",
+  "repository": "https://github.com/nolly-studio/cult-ui",
+  "retrievedOn": "2026-10-30",
+  "items": [
+    {
+      "name": "base-select",
+      "source": "https://www.cult-ui.com/r/base-select.json",
+      "sha256": "2fc1de497645892418d505d16f0633d86c69ba8b50afca7c4f128adc066bd01b"
+    },
+    {
+      "name": "halo-button",
+      "source": "https://www.cult-ui.com/r/halo-button.json",
+      "sha256": "418e62428d0ec6f839209c57d6c6ab9799137021211e397a01b1b2b3b14ea7d0"
+    },
+    {
+      "name": "halo-input",
+      "source": "https://www.cult-ui.com/r/halo-input.json",
+      "sha256": "4d398bdc765d131474125e1d81b219723e7fc762c3c275705ab1fe07cb6808c4"
+    },
+    {
+      "name": "halo-progress",
+      "source": "https://www.cult-ui.com/r/halo-progress.json",
+      "sha256": "a06a08c9b6e34fa5dbaf571884b3534dfd1abab64c6afb1f139056a576efa86d"
+    },
+    {
+      "name": "halo-select",
+      "source": "https://www.cult-ui.com/r/halo-select.json",
+      "sha256": "cdc8b599dbbe05538f0a2b32fecc1f023998e3ed7b9f37e84c975848e46be5fb"
+    },
+    {
+      "name": "halo-switch",
+      "source": "https://www.cult-ui.com/r/halo-switch.json",
+      "sha256": "232dc298f751b97e64c78c7c2cecb315494f7a1afc4a5ba77742bd0965f0e563"
+    },
+    {
+      "name": "halo-tabs",
+      "source": "https://www.cult-ui.com/r/halo-tabs.json",
+      "sha256": "0551f25c79fc5384c3e5720fc919fb42b50a193825c842c8c67d74b46beb30bd"
+    }
+  ]
+}

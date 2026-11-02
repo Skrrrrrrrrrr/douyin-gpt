@@ -87,7 +87,7 @@ test('GPT 旧观看记录仍占 GPT 配额，DeepSeek 可独立浏览 5 条并�
   assert.equal(h.models.deepseek.config.model, h.store.data.videos.at(-1).model);
   const restarted = new Store(h.home);
   assert.equal(restarted.videoCount(dayKey(), 'deepseek'), 5); assert.equal(restarted.videoCount(), 15);
-  assert.equal(restarted.videoCount('2026-10-30', 'deepseek'), 0);
+  assert.equal(restarted.videoCount(dayKey(new Date(Date.now()+86400000)), 'deepseek'), 0);
   assert.equal(h.state.calls.openai.length, 0); assert.equal(h.state.calls.deepseek.length, 5);
   assert.equal(new Set(h.state.watches).size, 5);
   assert.ok(restarted.lastBrowseAt('deepseek')); assert.equal(restarted.lastBrowseAt(), 0);
@@ -111,7 +111,11 @@ test('两个模型共用同一视频评论的去重键和冷却，计数则各�
 });
 test('DeepSeek 每天最多 5 条主动评论、10 条评论回复，不消耗 GPT 的 5/20 配额', async t => {
   const h = harness(t);
-  for (let i = 0; i < 7; i++) await h.service.submit('comment', { ...video, id: `v${i}` }, null, decision, 'deepseek');
+  for (let i = 0; i < 7; i++) {
+    await h.service.submit('comment', { ...video, id: `v${i}` }, null, decision, 'deepseek');
+    const last = h.service.ledger.data.actions.at(-1);
+    if (last) { last.sentAt = new Date(Date.now() - 60 * 60_000).toISOString(); h.service.ledger.save(); }
+  }
   for (let i = 0; i < 12; i++) await h.service.submit('reply', video, { ...target, id: `t${i}` }, decision, 'deepseek');
   assert.equal(h.state.sends.length, 15);
   assert.equal(h.service.ledger.quota('comment', providerEngagement(h.cfg, 'deepseek'), 'deepseek'), 0);
@@ -120,7 +124,7 @@ test('DeepSeek 每天最多 5 条主动评论、10 条评论回复，不消耗 G
   assert.equal(h.service.ledger.quota('reply', h.cfg.engagement), 20);
   const restarted = new CommentStore(h.home);
   assert.equal(restarted.count('reply', dayKey(), 'deepseek'), 10);
-  assert.equal(restarted.count('reply', '2026-10-30', 'deepseek'), 0);
+  assert.equal(restarted.count('reply', dayKey(new Date(Date.now()+86400000)), 'deepseek'), 0);
 });
 test('用户回复 DeepSeek 的评论由 DeepSeek 回答，跨模型去重在重启后仍有效', async t => {
   const h = harness(t); ownThread(h); h.service.ledger.baseline([]); h.state.events = [event];

@@ -1,8 +1,99 @@
 {
-  "account": { "douyinId": "", "secUid": "" },
-  "browser": { "headless": false },
-  "journal": { "enabled": true, "refreshMinutes": 30, "outputDir": "" },
-  "video": { "enabled": false, "hour": 21, "minute": 0, "python": "python3", "outputDir": "", "speechModel": "gpt-realtime-2.1-mini", "voices": { "openai": "coral", "deepseek": "shimmer" }, "voiceProfiles": {} },
+  "account": {
+    "douyinId": "",
+    "secUid": ""
+  },
+  "browser": {
+    "headless": true,
+    "background": false
+  },
+  "understanding": {
+    "enabled": false,
+    "model": "gpt-transcribe",
+    "ocr": true
+  },
+  "tokenEfficiency": {
+    "enabled": true,
+    "combineVideoComment": true,
+    "separateOCR": false,
+    "transcribeWithCaptions": false,
+    "cachePrompts": true,
+    "framesPerVideo": 1
+  },
+  "videoAnalysis": {
+    "enabled": false,
+    "model": "gpt-6-luna",
+    "command": "",
+    "python": "",
+    "sampleIntervalSeconds": 8,
+    "maxSceneFrames": 40,
+    "timeoutSeconds": 300,
+    "maxMediaBytes": 536870912,
+    "retainMedia": false
+  },
+  "memory": {
+    "enabled": false,
+    "maxFacts": 40,
+    "retentionDays": 90
+  },
+  "monitor": {
+    "enabled": true,
+    "pollSeconds": 300,
+    "notify": false,
+    "reviewGraceMinutes": 60
+  },
+  "dashboard": {
+    "port": 3146,
+    "host": "127.0.0.1",
+    "publicUrl": ""
+  },
+  "journal": {
+    "enabled": true,
+    "refreshMinutes": 30,
+    "summaryMode": "interval",
+    "summaryHour": 20,
+    "summaryMinute": 45,
+    "outputDir": ""
+  },
+  "video": {
+    "enabled": false,
+    "hour": 21,
+    "minute": 0,
+    "python": "python3",
+    "outputDir": "",
+    "speechModel": "gpt-realtime-2.1-mini",
+    "voices": {
+      "openai": "coral",
+      "deepseek": "shimmer"
+    },
+    "voiceProfiles": {},
+    "series": {
+      "enabled": false,
+      "maxEpisodes": 7,
+      "catchphrases": {
+        "openai": "先别急，一件一件来。",
+        "deepseek": "本鱼有在认真！"
+      }
+    },
+    "production": {
+      "enabled": false,
+      "camera": true,
+      "cards": true,
+      "music": true,
+      "musicVolume": 0.08
+    },
+    "weekly": {
+      "enabled": false,
+      "weekday": 0,
+      "days": 7
+    },
+    "narrative": {
+      "enabled": false,
+      "audienceQA": true,
+      "followups": true,
+      "growth": true
+    }
+  },
   "browse": {
     "enabled": true,
     "everyMinutes": 5,
@@ -26,16 +117,115 @@
   },
   "deepseek": {
     "enabled": false,
-    "browse": { "videosPerDay": 5, "videosPerRound": 1, "everyMinutes": 35 },
-    "engagement": { "enabled": false, "commentsPerDay": 5, "repliesPerDay": 10 }
+    "browse": {
+      "videosPerDay": 5,
+      "videosPerRound": 1,
+      "everyMinutes": 35
+    },
+    "engagement": {
+      "enabled": false,
+      "commentsPerDay": 5,
+      "repliesPerDay": 10
+    }
   },
   "reply": {
     "enabled": true,
-    "routing": { "enabled": false, "deepseekKeyword": "大肥鱼" },
+    "audience": "allowlist",
+    "friends": {
+      "syncSeconds": 60,
+      "enabledAt": "",
+      "overrides": []
+    },
+    "groups": {
+      "enabled": false,
+      "enabledAt": "",
+      "cooldownSeconds": 30,
+      "maxChars": 240
+    },
+    "routing": {
+      "enabled": false,
+      "deepseekKeyword": "大肥鱼"
+    },
     "pollSeconds": 15,
     "maxChars": 240,
     "perContactPerDay": 40,
     "totalPerDay": 80,
-    "contacts": []
+    "contacts": [],
+    "takeover": {
+      "enabled": false,
+      "minutes": 30
+    },
+    "media": {
+      "enabled": false,
+      "maxBytes": 8000000
+    },
+    "stickers": {
+      "enabled": false,
+      "perContactPerDay": 3,
+      "cooldownMinutes": 10,
+      "maxBytes": 8000000,
+      "unlimited": false,
+      "mode": "native"
+    },
+    "delivery": {
+      "enabled": false,
+      "textWithSticker": true,
+      "continueMinutes": 10
+    },
+    "collaboration": {
+      "enabled": false
+    },
+    "voiceCards": {
+      "enabled": false,
+      "maxChars": 60,
+      "maxSeconds": 15,
+      "reviewBeforeSend": false
+    },
+    "usageContext": {
+      "enabled": false,
+      "audience": "allowlist",
+      "contacts": [],
+      "groups": false
+    }
+  },
+  "audience": {
+    "enabled": false,
+    "autoSelect": true
+  },
+  "analytics": {
+    "enabled": false
+  },
+  "discovery": {
+    "enabled": false,
+    "topics": [],
+    "profiles": {},
+    "fallbackToFeed": true
+  },
+  "budget": {
+    "enabled": true,
+    "limitsUSD": {
+      "openai": null,
+      "deepseek": null
+    },
+    "prices": {}
+  },
+  "review": {
+    "private": "auto",
+    "comments": "auto",
+    "videos": "auto"
+  },
+  "service": {
+    "enabled": false,
+    "pollSeconds": 30,
+    "prepHour": 18,
+    "prepMinute": 30,
+    "lateGraceMinutes": 90
+  },
+  "backup": {
+    "enabled": false,
+    "keep": 7
+  },
+  "official": {
+    "enabled": false
   }
 }

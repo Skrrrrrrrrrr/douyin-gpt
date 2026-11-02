@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { spawn, execFileSync } from 'node:child_process';
 import { ROOT, loadEnv, homePath, readConfig, modelConfig, makeDirs } from '../src/config.mjs';
 import { atomicJson } from '../src/store.mjs';
+import {setDesired,serviceDesired,endMaintenance} from '../src/service-control.mjs';
 import { sleep } from '../src/browser.mjs';
 
 loadEnv();
@@ -19,6 +20,7 @@ function isWorker(meta) {
   } catch { return false; }
 }
 async function main() {
+  const internal=process.argv.includes('--maintenance');if(['start','stop'].includes(command)){if(internal){if(command==='start'&&!serviceDesired(home).worker){console.log('本人已暂停后台，保持暂停');return;}setDesired(home,'worker',true,{maintenance:true});}else setDesired(home,'worker',command==='start');}
   const meta = read(file);
   if (command === 'status') {
     console.log(JSON.stringify({ running: isWorker(meta), stopping: Boolean(meta?.stoppingAt && isWorker(meta)), pid: isWorker(meta) ? meta.pid : null, log: join(home, 'assistant.log') }, null, 2));
@@ -26,7 +28,7 @@ async function main() {
   }
   if (command === 'stop') {
     if (!isWorker(meta)) { console.log('后台助手没有运行'); return; }
-    atomicJson(file, { ...meta, stoppingAt: new Date().toISOString() });
+    atomicJson(file, { ...meta, stoppingAt: new Date().toISOString(),keepBrowser:process.argv.includes('--keep-browser') });
     // 确认独有 runtimeId 和命令路径后才发信号，避免 PID 重用时误停其他进程。
     process.kill(meta.pid, 'SIGTERM');
     for (let i = 0; i < 150 && isWorker(meta); i++) await sleep(200);
@@ -66,6 +68,7 @@ async function main() {
     const lock = read(lockFile);
     if (lock?.pid === child.pid && lock?.runtimeId === runtimeId && isWorker(next)) {
       atomicJson(file, next);
+      if(internal)endMaintenance(home);
       console.log(`后台助手已启动（PID ${child.pid}）。日志：${logFile}`);
       return;
     }

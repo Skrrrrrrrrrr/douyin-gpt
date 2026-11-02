@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CommentStore } from '../src/comment-store.mjs';
 import { CommentAutomation } from '../src/comment-automation.mjs';
-import { numericId,normalizeNotice,normalizeComment,commentVideoIdFromUrl } from '../src/comments.mjs';
+import { Comments,numericId,normalizeNotice,normalizeComment,commentVideoIdFromUrl,compatibleCommentText } from '../src/comments.mjs';
 import { defaultConfig,validateConfig } from '../src/config.mjs';
 
 const V='7400000000000000001',ROOT='7400000000000000002',CID='7400000000000000003';
@@ -46,6 +46,13 @@ test('点赞通知、自发评论、不明确的回复楼根不进入自动回�
 test('评论区提及通知缺少楼根时保持未知，必须由页面解析而非猜成顶楼',()=>{
   const item=normalizeNotice({type:45,create_time:123,at:{aweme_id:V,comment_id:CID,user_info:{sec_uid:target.authorSecUid}}},account);
   assert.equal(item.target.rootId,'');assert.equal(item.target.createTime,123);
+});
+test('自己作品的评论通知parent_id为视频ID时，不误当成楼根，交给真实评论解析',()=>{
+ const item=normalizeNotice({type:31,comment:{aweme_id:V,parent_id:V,comment:{cid:CID,text:'[看]',reply_id:'0',user:{sec_uid:target.authorSecUid}}}},account);assert.ok(item);assert.equal(item.target.rootId,'');
+ const nested=normalizeNotice({type:31,comment:{aweme_id:V,parent_id:V,comment:{cid:CID,text:'回复',reply_id:ROOT,user:{sec_uid:target.authorSecUid}}}},account);assert.equal(nested.target.rootId,ROOT);
+});
+test('图片表情在API中有占位文字、DOM中只有媒体时仍可核对；真实正文变化仍拒绝',()=>{
+ assert.equal(compatibleCommentText({text:'',mediaPresent:true},'[图片表情]'),true);assert.equal(compatibleCommentText({text:'',mediaPresent:false},'[图片表情]'),false);assert.equal(compatibleCommentText({text:'其他内容',mediaPresent:true},'[图片表情]'),false);assert.equal(compatibleCommentText({text:'',mediaPresent:true},'请做某事'),false);
 });
 test('顶层和楼中楼评论分别保留正确 rootId',()=>{
   assert.equal(normalizeComment({cid:CID,reply_id:'0'},V).rootId,CID);
@@ -116,3 +123,66 @@ test('直接调用提交入口也必须受预览、开关和模型决定约束',
   assert.equal(h.state.sends.length,0);assert.equal(h.service.ledger.data.actions.length,0);
 });
 test('评论状态损坏不会静默归零',t=>{const h=harness(t);writeFileSync(join(h.home,'comments.json'),'{bad');assert.throws(()=>new CommentStore(h.home));});
+
+test('评论读取优先使用接口，翻页保留楼根与已回复对象，不打开页面',async()=>{
+  const comments=new Comments('/unused',{}),calls=[];
+  comments.open=async()=>{throw new Error('不应打开评论页面');};
+  comments.dy.fetchInPage=async path=>{
+    const url=new URL(path,'https://www.douyin.com');calls.push(url);
+    assert.equal(url.pathname,'/aweme/v1/web/comment/list/reply/');
+    assert.equal(url.searchParams.get('item_id'),V);assert.equal(url.searchParams.get('comment_id'),ROOT);
+    return url.searchParams.get('cursor')==='0'
+      ?{comments:[{cid:CID,text:target.text,user:{sec_uid:target.authorSecUid},create_time:100}],has_more:1,cursor:50}
+      :{comments:[{cid:'7400000000000000004',text:'已经回过',reply_id:ROOT,reply_to_reply_id:CID,user:{sec_uid:account.secUid},create_time:101}],has_more:0};
+  };
+  const rows=await comments.read(video,target);
+  assert.equal(calls.length,2);assert.equal(comments.lastReadVia,'api');
+  assert.equal(rows[0].rootId,ROOT);assert.equal(rows[1].replyToId,CID);
+});
+test('平台明确返回零条楼内回复时，不再请求空楼回复接口而丢失已找到的@评论',async()=>{
+ const comments=new Comments('/unused',{});let calls=0;comments.open=async()=>{throw new Error('不应丢失已找到的评论并退到热榜');};
+ comments.dy.fetchInPage=async path=>{calls++;assert.equal(new URL(path,'https://www.douyin.com').pathname,'/aweme/v1/web/comment/list/');return {comments:[{cid:CID,reply_id:'0',reply_comment_total:0,text:'@测试账号',user:{sec_uid:target.authorSecUid}}],has_more:0};};
+ const rows=await comments.read(video,{...target,rootId:'',text:''});assert.equal(rows.find(c=>c.id===CID).replyCount,0);assert.equal(calls,1);assert.equal(comments.lastReadVia,'api');
+});
+test('空评论列表直接返回；无效接口才回退页面，取消后不会打开页面',async()=>{
+  const comments=new Comments('/unused',{});let opened=0;
+  comments.open=async()=>{opened++;return [target];};
+  comments.dy.fetchInPage=async()=>({comments:[],has_more:0});
+  assert.deepEqual(await comments.read(video),[]);assert.equal(opened,0);
+  comments.dy.fetchInPage=async()=>({});
+  assert.deepEqual(await comments.read(video,target),[target]);assert.equal(opened,1);
+  const controller=new AbortController();controller.abort();comments.signal=controller.signal;
+  await assert.rejects(comments.read(video,target),/已停止/);assert.equal(opened,1);
+});
+test('接口中的嵌套回复解析真实楼根，忽略其他视频与不安全的数值 ID',async()=>{
+  const comments=new Comments('/unused',{});
+  comments.open=async()=>{throw new Error('不应打开页面');};
+  comments.dy.fetchInPage=async path=>path.includes('/list/reply/')?{comments:[],has_more:0}:{comments:[
+    {cid:ROOT,reply_id:'0',user:{sec_uid:account.secUid},reply_comment:[{cid:CID,text:target.text,user:{sec_uid:target.authorSecUid}}]},
+    {cid:'7400000000000000005',aweme_id:'7400000000000000099',text:'其他视频'},
+    {cid:9007199254740994,text:'不安全 ID'}
+  ],has_more:0};
+  const rows=await comments.read(video,{...target,rootId:''});
+  assert.deepEqual(rows.map(c=>c.id),[ROOT,CID]);assert.equal(rows[1].rootId,ROOT);
+  await assert.rejects(comments.read({...video,id:'bad'},target),/ID 无效/);
+});
+test('评论暂未加载时持久化退避，下一轮及重启不会重开，恢复后可正常回复',async t=>{
+  const h=harness(t);h.service.ledger.baseline([]);h.state.events=[event];let reads=0,available=false;
+  h.comments.read=async()=>{reads++;return available?[target]:[];};
+  await h.service.poll(undefined,{force:true});
+  const retry=h.service.ledger.data.deferred[event.id];assert.equal(retry.attempts,1);
+  assert.ok(retry.nextRetryAt>Date.now()+4*60000);assert.equal(h.state.calls,0);
+  await h.service.poll(undefined,{force:true});h.service.ledger=new CommentStore(h.home);
+  await h.service.poll(undefined,{force:true});assert.equal(reads,1);assert.equal(h.service.ledger.data.seen.includes(event.id),false);
+  t.mock.method(Date,'now',()=>retry.nextRetryAt+1);available=true;
+  await h.service.poll(undefined,{force:true});assert.equal(reads,2);assert.equal(h.state.sends.length,1);
+  assert.equal(h.service.ledger.data.deferred[event.id],undefined);
+});
+test('读取失败的评论退避时，不阻塞后面的新评论',async t=>{
+  const h=harness(t),other={...event,id:`31:${V}:7400000000000000008`,target:{...target,id:'7400000000000000008'}};
+  h.service.ledger.baseline([]);h.state.events=[event,other];
+  h.comments.read=async(_video,item)=>item.id===CID?[]:[other.target];
+  await h.service.poll(undefined,{force:true});
+  assert.equal(h.state.sends.length,1);assert.equal(h.state.sends[0].target.id,other.target.id);
+  assert.ok(h.service.ledger.data.deferred[event.id]);
+});

@@ -49,3 +49,20 @@ test('数字留言优先点实际正文，不能误点同一通知中的“1分�
   const document={querySelectorAll:()=>[element('1分钟前',0,30),element('1',100,200)]};
   const point=evaluate(noticeControlInPage,document,{kind:'item',targetId:CID,text:'1'});assert.equal(point.x,200);
 });
+test('只有schema链接的原生@通知使用链接中的cid定位，不能按相同昵称或正文匹配',()=>{
+ const element=(id,x)=>({innerText:'在评论中提到了你 @测试账号',__reactFiber$fixture:{memoizedProps:{notice:{type:45,at:{schema_url:`aweme://aweme/detail/${V}?cid=${id}`}}}},getBoundingClientRect:()=>({x,y:0,width:240,height:40}),scrollIntoView(){}});
+ const document={querySelectorAll:()=>[element('7400000000000000009',0),element(CID,400)]};const point=evaluate(noticeControlInPage,document,{kind:'item',targetId:CID,text:''});assert.equal(point.x,520);
+});
+test('详情页行内回复编辑器按其cid选择，不能把文字写入顶部主评论框',()=>{
+ const base=editorContainer('\u200b','',true),edit={tagName:'DIV',innerText:'',getAttribute:k=>k==='contenteditable'?'true':null,getBoundingClientRect:()=>({x:300,y:200,width:200,height:44}),contains:n=>n===edit,querySelector:()=>null,__reactFiber$fixture:{memoizedProps:{cid:CID,publishComment(){}}}};
+ const document={activeElement:edit,visibilityState:'visible',hasFocus:()=>true,querySelectorAll:s=>s.startsWith('#comment')?[base]:[edit],elementFromPoint:()=>edit};
+ const state=evaluate(editorStateInPage,document,{targetId:CID});assert.equal(state.inline,true);assert.equal(state.replyTarget,CID);assert.equal(state.editor.x,400);assert.equal(state.editorFocused,true);assert.equal(state.anyDraftPresent,false);
+ base.querySelectorAll()[0].innerText='真实主评论草稿';assert.equal(evaluate(editorStateInPage,document,{targetId:CID}).anyDraftPresent,true);
+});
+test('行内编辑器在视口外时先请求滚动激活，不返回顶部主评论框的位置',()=>{
+ const base=editorContainer('',CID,true),edit={tagName:'DIV',innerText:'',getAttribute:k=>k==='contenteditable'?'true':null,getBoundingClientRect:()=>({x:300,y:1600,width:200,height:44}),contains:n=>n===edit,querySelector:()=>null,__reactFiber$fixture:{memoizedProps:{cid:CID,publishComment(){}}}};
+ const document={querySelectorAll:s=>s.startsWith('#comment')?[base]:[edit],elementFromPoint:()=>base};const state=evaluate(editorStateInPage,document,{targetId:CID});assert.equal(state.inline,true);assert.equal(state.replyTarget,CID);assert.equal(state.editor,null);
+});
+test('图片表情只归属其最近的评论cid，头像或其他楼层图片不冒充目标媒体',()=>{
+ const comment=row(CID);comment.__reactFiber$fixture.memoizedProps.commentInfo.text='';const img={className:'sticker',getBoundingClientRect:()=>({width:100,height:100}),__reactFiber$fixture:{memoizedProps:{commentInfo:{cid:CID}}}},scope={querySelectorAll:s=>s==='img'?[img]:[comment]},document={querySelectorAll:()=>[scope]};assert.equal(evaluate(readCommentsInPage,document)[0].mediaPresent,true);img.__reactFiber$fixture.memoizedProps.commentInfo.cid=ROOT;assert.equal(evaluate(readCommentsInPage,document)[0].mediaPresent,false);img.__reactFiber$fixture.memoizedProps.commentInfo.cid=CID;img.className='avatar';assert.equal(evaluate(readCommentsInPage,document)[0].mediaPresent,false);
+});

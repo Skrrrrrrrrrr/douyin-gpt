@@ -1,0 +1,3 @@
+const rootKeys=new Set(['state.json','comments.json','memory.json','usage.json','reviews.json','audience.json','takeover.json','interests.json','groups.json','friends.json','analytics.json','public-events.json','official-events.json','programme.json','storylines.json','discovery-preview.json','native-stickers.json']);
+export function businessKey(key){return typeof key==='string'&&(rootKeys.has(key)||/^reports\/\d{4}-\d{2}-\d{2}\.(videos|summary)\.json$/.test(key)||/^video\/\d{4}-\d{2}-\d{2}\/(episode|replacement-plan|replacement)\.json$/.test(key));}
+export function senderKey(key){return ['state.json','comments.json'].includes(key)||/^video\/\d{4}-\d{2}-\d{2}\/episode\.json$/.test(key);}

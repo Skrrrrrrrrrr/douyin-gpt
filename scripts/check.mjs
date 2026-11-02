@@ -11,7 +11,7 @@ function walk(path) {
   });
 }
 let count = 0;
-for (const file of walk(ROOT).filter(f => f.endsWith('.mjs'))) {
+for (const file of walk(ROOT).filter(f => /\.(mjs|js)$/.test(f))) {
   const result = spawnSync(process.execPath, ['--check', file], { encoding: 'utf8' });
   if (result.status !== 0) { console.error(result.stderr); process.exit(1); }
   count++;

@@ -1,6 +1,9 @@
-import {readFileSync,existsSync} from 'node:fs';
+import {readStoredFile as readFileSync, storedExists as existsSync} from './storage.mjs';
+
 import {join} from 'node:path';
 import {randomUUID} from 'node:crypto';
+import {approvedEpisode} from './episode-review.mjs';
+import {Reviews} from './reviews.mjs';
 import {atomicJson} from './store.mjs';
 import {dayKey} from './config.mjs';
 import {journalDay} from './journal.mjs';
@@ -13,7 +16,9 @@ export function publisherSnapshotInPage(){
  const title=document.querySelector('input[placeholder="填写作品标题，为作品获得更多流量"]');
  const editor=[...document.querySelectorAll('[contenteditable=true]')].find(visible);
  const checks=[...document.querySelectorAll('label')].filter(visible).map(e=>({label:normalize(e.innerText),checked:!!e.querySelector('input:checked')}));
- return {url:location.href,title:title?.value||'',description:normalize(editor?.innerText),text:document.body.innerText.slice(0,20000),checks,scheduled:document.querySelector('input[placeholder="日期和时间"]')?.value||'',publishEnabled:[...document.querySelectorAll('button')].some(e=>visible(e)&&e.innerText.trim()==='发布'&&!e.disabled),links:[...document.querySelectorAll('a[href]')].map(e=>({text:normalize(e.innerText),href:e.href}))};
+ const declaration=[...document.querySelectorAll('section')].find(e=>[...e.querySelectorAll('div')].some(n=>n.innerText.trim()==='自主声明'));
+ const aiDeclared=!!declaration?.querySelector('[class*=selected]')&&declaration.querySelector('[class*=selectText]')?.innerText.trim()==='内容由AI生成';
+ return {url:location.href,title:title?.value||'',description:normalize(editor?.innerText),aiDeclared,text:document.body.innerText.slice(0,20000),checks,scheduled:document.querySelector('input[placeholder="日期和时间"]')?.value||'',publishEnabled:[...document.querySelectorAll('button')].some(e=>visible(e)&&e.innerText.trim()==='发布'&&!e.disabled),links:[...document.querySelectorAll('a[href]')].map(e=>({text:normalize(e.innerText),href:e.href}))};
 }
 export function publisherControlInPage({text,selector}){
  const visible=e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&getComputedStyle(e).display!=='none'&&getComputedStyle(e).visibility!=='hidden';};
@@ -25,7 +30,7 @@ const ev=(page,fn,arg)=>page.ev(`(${fn.toString()})(${arg===undefined?'':JSON.st
 export function validatePublishForm(snapshot,state,at){
  if(new URL(snapshot.url).origin!=='https://creator.douyin.com')throw new Error('不在抖音创作者中心');
  if(snapshot.title!==state.title||snapshot.description!==state.description)throw new Error('发布前标题或描述发生变化，保留稿件');
- if(!/作者声明[:：]\s*内容由AI生成/.test(snapshot.text))throw new Error('未核对 AI 内容声明');
+ if(!snapshot.aiDeclared&&!/作者声明[:：]\s*内容由AI生成/.test(snapshot.text))throw new Error('未核对 AI 内容声明');
  if(!snapshot.checks.some(x=>x.label==='公开'&&x.checked))throw new Error('公开可见设置无法核对');
  const mode=at?'定时发布':'立即发布';if(!snapshot.checks.some(x=>x.label===mode&&x.checked))throw new Error('发布时间模式无法核对');
  if(at&&snapshot.scheduled!==at)throw new Error('定时发布时间无法核对');
@@ -38,14 +43,19 @@ export function scheduledDate(value,now=new Date()){
  if(!Number.isFinite(date.getTime())||date-now<2*3600000||date-now>14*86400000)throw new Error('抖音定时发布需要 2 小时后、14 天内');
  return date;
 }
+export function publishReceipt(json){
+ const code=json?.status_code??json?.statusCode??json?.code;
+ const id=[json?.aweme_id,json?.item_id,json?.data?.aweme_id,json?.aweme?.aweme_id,json?.aweme_info?.aweme_id].find(v=>typeof v==='string'&&/^\d{15,25}$/.test(v));
+ return {accepted:code===0,id:id||'',code:typeof code==='number'?code:null};
+}
 export class Publisher{
  constructor(home,cfg,browser,{log=console.log}={}){Object.assign(this,{home,cfg,browser,log});this.dy=new Douyin(home,browser);}
  file(day){return join(this.home,'video',journalDay(day),'episode.json');}
  read(day){const state=JSON.parse(readFileSync(this.file(day),'utf8'));if(state.account?.secUid!==this.cfg.account.secUid)throw new Error('视频记录绑定的账号不一致');return state;}
  save(state){atomicJson(this.file(state.day),state);}
- async attach(){if(!this.page){this.page=await this.browser.page('publisher','https://creator.douyin.com/creator-micro/content/upload');await this.page.send('Network.enable');}return this.page;}
+ async attach(){if(!this.page){this.page=await this.browser.page('publisher','https://creator.douyin.com/creator-micro/content/upload');await this.page.send('Network.enable');this.receipts=[];this.requests=new Map();this.page.on('Network.requestWillBeSent',e=>{const u=new URL(e.request.url);if(this.armedAt&&Date.now()>=this.armedAt&&e.request.method==='POST'&&['https://creator.douyin.com','https://www.douyin.com'].includes(u.origin)&&/aweme\/(?:create|publish)|content\/publish/.test(u.pathname))this.requests.set(e.requestId,{at:Date.now(),path:u.pathname});});this.page.on('Network.loadingFinished',async e=>{const r=this.requests.get(e.requestId);if(!r)return;this.requests.delete(e.requestId);try{const body=await this.page.send('Network.getResponseBody',{requestId:e.requestId});const value=JSON.parse(body.base64Encoded?Buffer.from(body.body,'base64').toString():body.body);this.receipts.push({...publishReceipt(value),at:r.at,path:r.path});}catch{}});}return this.page;}
  async snapshot(){return ev(await this.attach(),publisherSnapshotInPage);}
- async click(options){const page=await this.attach();await page.send('Page.bringToFront');const p=await ev(page,publisherControlInPage,options);if(!p)throw new Error(`发布控件未找到：${options.text||options.selector}`);for(const type of ['mousePressed','mouseReleased'])await page.send('Input.dispatchMouseEvent',{type,x:p.x,y:p.y,button:'left',buttons:type==='mousePressed'?1:0,clickCount:1});await sleep(250);return p;}
+ async click(options){const page=await this.attach();if(this.browser.headless)await page.send('Page.bringToFront');const p=await ev(page,publisherControlInPage,options);if(!p)throw new Error(`发布控件未找到：${options.text||options.selector}`);for(const type of ['mousePressed','mouseReleased'])await page.send('Input.dispatchMouseEvent',{type,x:p.x,y:p.y,button:'left',buttons:type==='mousePressed'?1:0,clickCount:1});await sleep(250);return p;}
  async fill(selector,text,{replace=false}={}){
   const p=await this.click({selector}),old=String(p.value||'').replace(/[\u200b\ufeff]/g,'').trim();
   if(old===text)return;
@@ -76,7 +86,7 @@ export class Publisher{
   current=await this.snapshot();const mode=at?'定时发布':'立即发布';if(!current.checks.some(x=>x.label===mode&&x.checked))await this.click({text:mode});
   if(at)await this.fill('input[placeholder="日期和时间"]',at,{replace:true});
   for(let i=0;i<90;i++){
-   current=await this.snapshot();if(current.publishEnabled&&current.text.includes('重新上传'))break;
+   current=await this.snapshot();if(current.publishEnabled&&current.text.includes('重新上传')&&(current.aiDeclared||/作者声明[:：]\s*内容由AI生成/.test(current.text)))break;
    await sleep(1000);if(i===89)throw new Error('视频仍未上传完成，未提交发布');
   }
   validatePublishForm(current,state,at);state.status='prepared';state.uploadFingerprint=state.fingerprint;state.scheduledAt=at||'';this.save(state);return current;
@@ -87,22 +97,27 @@ export class Publisher{
   if(['published','scheduled','submitted'].includes(state.status)){this.log('本日已有已发布或定时视频，不重复发送');return state;}
   if(['publishing','uncertain'].includes(state.status))throw new Error('本日发布结果待核对，不自动重发');
   if(!['rendered','prepared','uploading'].includes(state.status)||!existsSync(state.videoPath))throw new Error('没有已完成的视频可以发布');
+  const approved=this.cfg.review?.videos==='review'?approvedEpisode(this.home,state):null;if(this.cfg.review?.videos==='review'&&!approved)throw new Error('当前成片尚未批准，保留待审稿');
   await this.prepare(state,{at,reuseUpload});await this.dy.checkAccount(this.cfg.account);
   validatePublishForm(await this.snapshot(),state,at);
+  if(approved&&!new Reviews(this.home).claim(approved.id))throw new Error('视频批准状态已变化');
   state.status='publishing';state.publishAttemptId=randomUUID();state.publishAttemptAt=new Date().toISOString();this.save(state);
   try{
+   this.armedAt=Date.now();
    await this.click({text:'发布'});
    for(let i=0;i<120;i++){
     const view=await this.snapshot();
     if(view.url.includes('/content/manage')&&view.text.includes(state.title)&&(!at||view.text.replace(/\s/g,'').includes(at.replace(/^(\d{4})-(\d{2})-(\d{2}) /,(_,y,m,d)=>`${y}年${Number(m)}月${Number(d)}日`).replace(/\s/g,'')))){
      state.status=at?'scheduled':'submitted';state.reviewStatus=view.text.includes('审核中')?'审核中':'已提交';state.platformReadback=view.text.slice(-18000);state.submittedAt=new Date().toISOString();state.scheduledAt=at||'';
      const link=view.links.find(l=>l.href.includes('/video/')&&(l.text.includes(state.title)||view.links.filter(x=>x.href.includes('/video/')).length===1));
-     if(link)state.platformUrl=link.href;this.save(state);this.log(`${at?'已定时':'已提交'}发布，并在作品管理回读：${state.title}`);return state;
+     if(link)state.platformUrl=link.href;this.save(state);if(approved)new Reviews(this.home).finish(approved.id,'sent');this.log(`${at?'已定时':'已提交'}发布，并在作品管理回读：${state.title}`);return state;
     }
     if(/验证码|安全验证/.test(view.text))throw new Error('发布页面需要本人完成抖音验证');
     await sleep(500);
    }
+   const receipt=this.receipts?.find(r=>r.at>=this.armedAt&&r.accepted);
+   if(receipt){state.status=at?'scheduled':'submitted';state.receipt=receipt;state.scheduledAt=at||'';state.submittedAt=new Date().toISOString();if(receipt.id){state.platformVideoId=receipt.id;state.platformUrl=`https://www.douyin.com/video/${receipt.id}`;}state.note='平台返回成功回执，作品管理列表尚待刷新；发布复核会继续核对';this.save(state);if(approved)new Reviews(this.home).finish(approved.id,'sent');return state;}
    throw new Error('发布后未在作品管理回读到本日标题，需人工核对');
-  }catch(error){state.status='uncertain';state.note=error.message;this.save(state);throw error;}
+  }catch(error){if(approved)new Reviews(this.home).finish(approved.id,'uncertain',error.message);state.status='uncertain';state.note=error.message;this.save(state);throw error;}
  }
 }

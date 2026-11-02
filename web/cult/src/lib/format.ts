@@ -1,0 +1,10 @@
+import {mediaUrl} from '../../../connection.js';
+export {assetUrl} from '../../../connection.js';
+export const providerName=(p:string)=>p==='deepseek'?'DeepSeek':p==='edge'?'Edge 配音':'GPT';
+export const number=(n:unknown)=>n==null?'—':Number(n).toLocaleString('zh-CN');
+export const money=(n:unknown)=>n==null?'—':'$'+Number(n).toFixed(5);
+export const time=(t:unknown)=>{if(!t)return '—';const d=new Date(t as string);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',hour:'2-digit',minute:'2-digit',hour12:false}).format(d):'—';};
+export const dateTime=(t:unknown)=>{if(!t)return '—';const d=new Date(t as string);return Number.isFinite(d.getTime())?new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hour12:false}).format(d):'—';};
+export const safeUrl=(v:unknown)=>{try{const u=new URL(String(v));return u.protocol==='https:'&&['www.douyin.com','creator.douyin.com','open.douyin.com','developer.open-douyin.com'].includes(u.hostname)?u.href:undefined;}catch{return undefined;}};
+export const labels:Record<string,string>={running:'运行中',paused:'已暂停',sent:'已回读',accepted:'已接收',sending:'发送中',draft:'草稿',pending:'待处理',approved:'已批准',uncertain:'待核对',not_sent:'未发送',superseded:'已取消',skipped:'已跳过',failed:'失败',published:'已发布',scheduled:'已定时',submitted:'已提交',rendered:'待发布',scripted:'已编排',audio_ready:'配音完成',prepared:'已就绪',uploading:'上传中',preview_ready:'预览已生成',passed:'复核通过',processing:'审核中',rejected:'需处理',unknown:'待复核',used:'已采用',ignored:'已忽略',cancelled:'已取消',stale:'已失效',expired:'已过期',partial:'部分完成',partial_cancelled:'后续已取消',completed:'已完成'};
+export const media=(kind:string,extra:Record<string,string>={})=>mediaUrl('/api/media?'+new URLSearchParams({kind,...extra}));

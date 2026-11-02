@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {replyContacts,friendSummary,validPeerId} from './reply-audience.mjs';
 import { existsSync, readFileSync, readdirSync, statSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline/promises';
@@ -9,6 +10,8 @@ import { Browser, findBrowser } from './browser.mjs';
 import { Douyin } from './douyin.mjs';
 import { Messenger } from './messenger.mjs';
 import { Gpt } from './openai.mjs';
+import {outgoingParts} from './delivery-state.mjs';
+import {Reviews} from './reviews.mjs';
 import { Engine } from './engine.mjs';
 import { importChromeLogin } from './import-chrome.mjs';
 import { Comments } from './comments.mjs';
@@ -17,6 +20,10 @@ import { CommentAutomation } from './comment-automation.mjs';
 import { DailyJournal, journalDay } from './journal.mjs';
 import {buildEpisode} from './broadcast.mjs';
 import {Publisher} from './publisher.mjs';
+import {Health} from './health.mjs';
+import {PublicationReview} from './publication-review.mjs';
+import {exitRecord} from './recovery.mjs';
+import {UsageMeter} from './usage.mjs';
 
 loadEnv();
 const home = homePath();
@@ -66,7 +73,7 @@ async function main() {
       ['OPENAI_API_KEY 已设置', Boolean(modelConfig().apiKey)],
       ...(cfg.deepseek.enabled ? [['DEEPSEEK_API_KEY 已设置', Boolean(modelConfig('deepseek').apiKey)]] : []),
       ['账号已绑定', Boolean(cfg.account.secUid)],
-      ['自动回复名单已配置', cfg.reply.contacts.some(c => c.enabled)],
+      ['自动回复范围已就绪', replyContacts(home,cfg).length>0],
     ];
     for (const [name, ok] of checks) console.log(`${ok ? '✓' : '·'} ${name}`);
     console.log(`模型：${modelConfig().model}；数据目录：${home}`);
@@ -81,10 +88,10 @@ async function main() {
     if (command === 'outbox') console.log(JSON.stringify(store.data.outbox.slice(-30), null, 2));
     else console.log(JSON.stringify({
       account: cfg.account.douyinId || (cfg.account.secUid ? '已绑定' : '未绑定'),
-      contacts: cfg.reply.contacts.filter(c => c.enabled).map(c => c.label),
+      replyAudience:friendSummary(home,cfg),contacts:replyContacts(home,cfg).map(c=>c.label),
       today: dayKey(), videosToday: store.videoCount(),
       privateReplyRouting: cfg.reply.routing.enabled ? { scope: '本轮未处理的新来信', keyword: cfg.reply.routing.deepseekKeyword, match: 'deepseek', otherwise: 'openai' } : { match: 'openai' },
-      repliesToday: store.data.outbox.filter(o => o.day === dayKey() && o.status === 'sent').length,
+      repliesToday: outgoingParts(store.data.outbox).filter(o => o.day === dayKey() && o.status === 'sent').length,
       unresolved: store.data.outbox.filter(o => ['sending', 'uncertain'].includes(o.status)).map(o => ({ id: o.id, label: o.label, status: o.status })),
       lastBrowseAt: store.data.lastBrowseAt ? new Date(store.data.lastBrowseAt).toISOString() : null,
       comments: { enabled: cfg.engagement.enabled, postedToday: comments.count('comment'), repliedToday: comments.count('reply'), halted: comments.data.halted, inboxInitialized: comments.data.initialized },
@@ -101,7 +108,7 @@ async function main() {
     }, null, 2));
     return;
   }
-  if (!['login', 'import-chrome', 'contacts', 'allow', 'deny', 'once', 'start', 'journal', 'video-build','video-publish', 'resolve', 'comments-resolve', 'browser-close'].includes(command)) throw new Error(`未知命令 ${command}，运行 node src/cli.mjs help 查看用法`);
+  if (!['login', 'import-chrome', 'contacts', 'allow', 'deny', 'once', 'start', 'journal', 'video-build','video-publish','video-review', 'resolve', 'comments-resolve', 'browser-close'].includes(command)) throw new Error(`未知命令 ${command}，运行 node src/cli.mjs help 查看用法`);
   if (command === 'start' && !args.includes('--live')) throw new Error('持续自动回复使用 start --live；先预览可用 once');
   if (['once', 'start'].includes(command) && !modelConfig().apiKey) throw new Error('请先在项目 .env 填 OPENAI_API_KEY；不需要把密钥发到聊天里');
   if (['once', 'start'].includes(command) && cfg.deepseek.enabled && !modelConfig('deepseek').apiKey) throw new Error('请先在本机配置 DEEPSEEK_API_KEY，或关闭 deepseek.enabled');
@@ -133,7 +140,8 @@ async function main() {
     }
     if (command === 'deny') {
       const id = arg('--id');
-      if (!id) throw new Error('需要 --id sec_uid');
+      if (!validPeerId(id)) throw new Error('需要有效的 --id sec_uid');
+      if(cfg.reply.audience==='friends'){cfg.reply.friends.overrides=cfg.reply.friends.overrides.filter(c=>c.secUid!==id);cfg.reply.friends.overrides.push({secUid:id,enabled:false});}
       cfg.reply.contacts = cfg.reply.contacts.filter(c => c.secUid !== id);
       atomicJson(join(home, 'config.json'), cfg);
       console.log('已从名单移除');
@@ -143,20 +151,21 @@ async function main() {
       const item = store.data.outbox.find(o => o.id === arg('--id'));
       const as = arg('--as');
       if (!item || !['sending', 'uncertain', 'draft'].includes(item.status) || !['sent', 'skip'].includes(as)) throw new Error('需要待核对的记录 ID，以及 --as sent 或 --as skip');
-      store.transition(item, as === 'sent' ? 'sent' : 'skipped', '使用者人工核对；本命令不会重发');
+      if(item.steps){for(let i=0;i<item.steps.length;i++){const step=item.steps[i];if(['sending','uncertain'].includes(step.status))store.step(item,i,as==='sent'?'sent':'skipped',null,'使用者核对结果，本命令不重发');else if(step.status==='pending')step.status='cancelled';}store.transition(item,item.steps.every(s=>s.status==='sent')?'sent':as==='sent'?'partial_cancelled':'skipped','使用者核对；未开始步骤已取消，不自动补发');}else store.transition(item, as === 'sent' ? 'sent' : 'skipped', '使用者人工核对；本命令不会重发');
+      if(item.reviewId)new Reviews(home).finish(item.reviewId,as==='sent'?'sent':'stale','使用者核对结果；不重发');
       console.log('已记录核对结果。下次启动后可继续处理新消息，本条不会重发。');
       return;
     }
     if (command === 'import-chrome') {
       // 先让 Chrome 创建它自己的数据库，关闭后才能写入专用 profile。
-      browser = new Browser(home, { headless: true });
+      browser = new Browser(home, cfg.browser);
       await browser.start({ initialUrl: 'about:blank' });
       await browser.quit();
       browser = null;
       // Browser.close 的回执可能早于 Cookie 数据库关闭，短暂等待进程释放。
       await new Promise(resolve => setTimeout(resolve, 1500));
       const imported = await importChromeLogin(home, arg('--profile'));
-      browser = new Browser(home, { headless: true });
+      browser = new Browser(home, cfg.browser);
       await browser.start({ initialUrl: 'https://www.douyin.com/user/self' });
       const actual = await new Douyin(home, browser).whoami();
       const expectedId = arg('--account') || cfg.account.douyinId;
@@ -166,8 +175,9 @@ async function main() {
       console.log(`已复用 Chrome 的抖音登录态并核对账号：${actual.nickname}（${actual.douyinId}），迁移 ${imported.imported} 项抖音 Cookie。凭证内容未输出。`);
       return;
     }
-    browser = new Browser(home, { headless: command === 'login' ? false : cfg.browser.headless });
+    browser = new Browser(home, { headless: command === 'login' ? false : cfg.browser.headless, background: command === 'login' ? false : cfg.browser.background });
     await browser.start();
+    if(command==='video-review'){const result=await new PublicationReview(home,cfg,browser,{log}).check(journalDay(arg('--day')||dayKey()));console.log(JSON.stringify(result,null,2));return;}
     if(command==='video-publish'){
       const publisher=new Publisher(home,cfg,browser,{log});
       const result=await publisher.publish(journalDay(arg('--day')||dayKey()),{live:args.includes('--live'),at:arg('--at'),reuseUpload:args.includes('--reuse-upload')});
@@ -203,6 +213,8 @@ async function main() {
         const id = arg('--id');
         const hits = contacts.filter(c => c.sec_uid === id && !c.is_group);
         if (hits.length !== 1) throw new Error('当前会话列表无法唯一核对这个 secUid，请先运行 contacts');
+        if(cfg.reply.audience==='friends'&&!replyContacts(home,cfg,{includeDisabled:true}).some(c=>c.secUid===id))throw new Error('好友模式只允许启用已核对的互关好友，请先同步好友名单');
+        if(cfg.reply.audience==='friends')cfg.reply.friends.overrides=cfg.reply.friends.overrides.filter(c=>c.secUid!==id);
         const label = arg('--label') || hits[0].nick;
         cfg.reply.contacts = cfg.reply.contacts.filter(c => c.secUid !== id);
         cfg.reply.contacts.push({ secUid: id, label, enabled: true });
@@ -226,6 +238,7 @@ async function main() {
     process.once('SIGINT', stop);
     process.once('SIGTERM', stop);
     messenger.signal = controller.signal;
+    new UsageMeter(home).recover();
     const gpt = new Gpt(modelConfig());
     gpt.signal = controller.signal;
     const models = { openai: gpt };
@@ -235,18 +248,19 @@ async function main() {
     }
     const engagement = new CommentAutomation({home,cfg,gpt,models,comments:new Comments(home,browser),dy,store,live:args.includes('--live'),log});
     const engine = new Engine({ home, cfg, store, gpt, models, dy, messenger, engagement, live: args.includes('--live'), log });
-    log(`${args.includes('--live') ? '正式运行' : '预览模式，不发消息'}；名单 ${cfg.reply.contacts.filter(c => c.enabled).length} 人`);
+    new Health(home).resolve('worker-error');new Health(home).resolve('worker-stopped');atomicJson(join(home,'worker-exit.json'),{version:1,userActionRequired:false,startedAt:new Date().toISOString()});
+    log(`${args.includes('--live') ? '正式运行' : '预览模式，不发消息'}；名单 ${replyContacts(home,cfg).length} 人（${cfg.reply.audience==='friends'?'互关好友':'指定名单'}）`);
     log(cfg.reply.routing.enabled ? `私信路由：本轮新来信包含「${cfg.reply.routing.deepseekKeyword}」→ DeepSeek；否则 → GPT` : '私信路由：GPT');
     for (const provider of PROVIDERS.filter(p => models[p])) {
       const browse = providerBrowse(cfg,provider), settings = providerEngagement(cfg,provider);
-      log(`[${providerLabel(provider)} / ${models[provider].config.model}] 视频 ${browse.videosPerDay}/天；公开评论：${settings.enabled&&settings.commentOnVideos?'开':'关'}（${settings.commentsPerDay}/天）；评论回复：${settings.enabled&&settings.replyToComments?'开':'关'}（${settings.repliesPerDay}/天）`);
+      log(`[${providerLabel(provider)} / ${models[provider].config.model}] 视频 ${browse.videosPerDay??'不限'}/天；公开评论：${settings.enabled&&settings.commentOnVideos?'开':'关'}（${settings.commentsPerDay??'不限'}/天）；评论回复：${settings.enabled&&settings.replyToComments?'开':'关'}（${settings.repliesPerDay??'不限'}/天）`);
     }
     try {
       if (command === 'start') await engine.run(controller.signal);
       else await engine.once(controller.signal);
       if (command === 'once') closeBrowser = true;
     } finally {
-      if (controller.signal.aborted) closeBrowser = true;
+      if (controller.signal.aborted) {let handoff;try{handoff=JSON.parse(readFileSync(join(home,'daemon.json'),'utf8'));}catch{}closeBrowser=!(handoff?.pid===process.pid&&handoff.runtimeId===arg('--runtime-id')&&handoff.keepBrowser===true);}
       process.removeListener('SIGINT', stop);
       process.removeListener('SIGTERM', stop);
     }
@@ -256,4 +270,4 @@ async function main() {
     release();
   }
 }
-main().catch(error => { console.error(`错误：${error.message}`); process.exitCode = 1; });
+main().catch(error => {try{if(['start','once'].includes(command))atomicJson(join(home,'worker-exit.json'),exitRecord(error));const cfg=readConfig(home);if(['start','once'].includes(command))new Health(home,{notify:cfg.monitor.notify}).alert('worker-error','抖音助手需要处理',error.message,{severity:'error'});}catch{} console.error(`错误：${error.message}`); process.exitCode = 1; });

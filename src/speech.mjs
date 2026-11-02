@@ -1,5 +1,6 @@
 import WebSocket from 'ws';
 import {writeFileSync} from 'node:fs';
+import {UsageMeter} from './usage.mjs';
 
 export function pcmWav(pcm, rate=24000) {
   if(!Buffer.isBuffer(pcm)||pcm.length<2||pcm.length%2)throw new Error('配音 PCM 数据无效');
@@ -13,17 +14,18 @@ export function speechSimilarity(a,b){
  return 1-row[b.length]/Math.max(a.length,b.length);
 }
 export class Speech {
- constructor(config,{WebSocketImpl=WebSocket}={}){this.config=config;this.Socket=WebSocketImpl;}
+ constructor(config,{WebSocketImpl=WebSocket}={}){this.config=config;this.Socket=WebSocketImpl;this.meter=config.meterHome?new UsageMeter(config.meterHome):null;}
  async create(text,file,{voice='coral',tone='清晰自然、明亮轻快的成年女性普通话声音',model='gpt-realtime-2.1-mini',signal}={}){
   if(signal?.aborted)throw new Error('配音已取消');
   if(!text.trim()||[...text].length>500)throw new Error('单段配音文字必须为 1～500 字');
   if(!this.config.apiKey)throw new Error('未配置 OpenAI 配音密钥');
   const base=new URL(this.config.baseUrl);if(base.protocol!=='https:'||base.username||base.password||base.search||base.hash)throw new Error('配音服务必须使用无凭证的 HTTPS 地址');
   base.protocol='wss:';base.pathname=base.pathname.replace(/\/$/,'')+'/realtime';base.searchParams.set('model',model);
+  const usageId=this.meter?.begin('openai','speech',model);let usage;
   return new Promise((resolve,reject)=>{
    let finished=false,transcript='',actualModel='',sent=false;const chunks=[];
    const ws=new this.Socket(base.toString(),{headers:{Authorization:`Bearer ${this.config.apiKey}`},handshakeTimeout:15000});
-   const finish=(error,result)=>{if(finished)return;finished=true;clearTimeout(timer);signal?.removeEventListener('abort',abort);ws.close();error?reject(error):resolve(result);};
+   const finish=(error,result)=>{if(finished)return;finished=true;clearTimeout(timer);signal?.removeEventListener('abort',abort);ws.close();try{this.meter?.finish(usageId,{usage,seconds:result?.duration,status:usage||!error?'completed':'unknown',model:actualModel});}catch(e){error||=e;}error?reject(error):resolve(result);};
    const abort=()=>finish(new Error('配音已取消'));const timer=setTimeout(()=>finish(new Error('配音接口超时')),90000);
    if(signal?.aborted){abort();return;}signal?.addEventListener('abort',abort,{once:true});
    const send=value=>ws.send(JSON.stringify(value));
@@ -40,6 +42,7 @@ export class Speech {
     if(e.type==='response.output_audio.delta')chunks.push(Buffer.from(e.delta,'base64'));
     if(e.type==='response.output_audio_transcript.delta')transcript+=e.delta;
     if(e.type==='response.done'){
+     usage=e.response?.usage;
      if(e.response?.status!=='completed'||!chunks.length)throw new Error('配音未完整生成');
      const pcm=Buffer.concat(chunks),similarity=speechSimilarity(text,transcript);
      if(similarity<0.82)throw new Error('配音转写与播报稿不一致，保留稿件待核对');

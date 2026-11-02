@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "items": [
+    {
+      "id": "gpt-ack",
+      "provider": "openai",
+      "emotion": "ack",
+      "label": "收到",
+      "file": "gpt-ack.png"
+    },
+    {
+      "id": "gpt-happy",
+      "provider": "openai",
+      "emotion": "happy",
+      "label": "开心",
+      "file": "gpt-happy.png"
+    },
+    {
+      "id": "gpt-comfort",
+      "provider": "openai",
+      "emotion": "comfort",
+      "label": "抱抱",
+      "file": "gpt-comfort.png"
+    },
+    {
+      "id": "deepseek-ack",
+      "provider": "deepseek",
+      "emotion": "ack",
+      "label": "收到",
+      "file": "deepseek-ack.png"
+    },
+    {
+      "id": "deepseek-happy",
+      "provider": "deepseek",
+      "emotion": "happy",
+      "label": "开心",
+      "file": "deepseek-happy.png"
+    },
+    {
+      "id": "deepseek-comfort",
+      "provider": "deepseek",
+      "emotion": "comfort",
+      "label": "抱抱",
+      "file": "deepseek-comfort.png"
+    },
+    {
+      "id": "gpt-wave",
+      "provider": "openai",
+      "emotion": "happy",
+      "label": "挥手",
+      "file": "gpt-wave.gif",
+      "animated": true
+    },
+    {
+      "id": "gpt-nod",
+      "provider": "openai",
+      "emotion": "ack",
+      "label": "点头收到",
+      "file": "gpt-nod.gif",
+      "animated": true
+    },
+    {
+      "id": "gpt-laugh",
+      "provider": "openai",
+      "emotion": "happy",
+      "label": "笑哭",
+      "file": "gpt-laugh.gif",
+      "animated": true
+    },
+    {
+      "id": "deepseek-wave",
+      "provider": "deepseek",
+      "emotion": "happy",
+      "label": "挥手",
+      "file": "deepseek-wave.gif",
+      "animated": true
+    },
+    {
+      "id": "deepseek-nod",
+      "provider": "deepseek",
+      "emotion": "ack",
+      "label": "点头收到",
+      "file": "deepseek-nod.gif",
+      "animated": true
+    },
+    {
+      "id": "deepseek-laugh",
+      "provider": "deepseek",
+      "emotion": "happy",
+      "label": "笑哭",
+      "file": "deepseek-laugh.gif",
+      "animated": true
+    }
+  ]
+}

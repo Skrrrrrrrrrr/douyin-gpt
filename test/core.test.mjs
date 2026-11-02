@@ -70,6 +70,15 @@ test('不同消息 ID 的相同文字会分别回复', async t => {
   await h.engine.pollReplies();
   assert.equal(h.state.sends.length, 2);
 });
+test('发送回读后，告警或记忆写盘失败不能改成 uncertain 或导致重发',async t=>{
+ for(const failure of ['health','memory']){
+  const h=harness(t);
+  if(failure==='health')h.engine.health.resolve=()=>{throw new Error('告警写盘失败');};
+  else{h.engine.memory={facts:()=>[],observe:async()=>{throw new Error('记忆写盘失败');}};h.engine.health.alert=()=>{throw new Error('通知也不可用');};}
+  await h.engine.pollReplies();assert.equal(h.store.data.outbox[0].status,'sent');assert.equal(h.store.blocked(contact.secUid),false);
+  await h.engine.pollReplies();assert.equal(h.state.sends.length,1);
+ }
+});
 test('未知发送方、没有消息 ID 和已被主人回复的消息不自动回复', () => {
   assert.deepEqual(unanswered([{ id: 'x', from: 'them', text: '你好' }, { id: 'y', from: 'unknown', text: '未知' }]), []);
   assert.deepEqual(unanswered([{ from: 'them', text: '没有 ID' }]), []);

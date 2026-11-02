@@ -29,3 +29,5 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+本机控制台的 DM Sans 字体由 The DM Sans Project Authors 提供，按 SIL Open Font License 1.1 分发；版权与完整许可在 `web/fonts/OFL.txt`，来源为 [Google Fonts](https://github.com/google/fonts/tree/main/ofl/dmsans)。

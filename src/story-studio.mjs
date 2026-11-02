@@ -1,0 +1,8 @@
+import {readStoredFile as readFileSync, storedExists as existsSync} from './storage.mjs';
+import {programmeSettings} from './programme-config.mjs';
+import {join} from 'node:path';
+import {dayKey} from './config.mjs';import {Storylines,publicText} from './storylines.mjs';import {PublicEvents} from './public-events.mjs';
+export function storyStudio(home,cfg){
+ const state=new Storylines(home,cfg).read(),day=dayKey(),read=base=>{const path=join(base,'video',day,'episode.json');if(!existsSync(path))return null;const e=JSON.parse(readFileSync(path,'utf8')),n=e.show?.narrative;if(!n)return null;return {day:e.day,status:e.status,title:publicText(e.title,80),fingerprint:e.fingerprint,column:n.column,mainline:{kind:n.mainline.kind,title:n.mainline.title,happened:n.mainline.happened,handled:n.mainline.handled,result:n.mainline.result,status:n.mainline.status},facts:n.facts.map(f=>({id:f.id,kind:f.kind,day:f.day,summary:f.summary,evidence:f.evidence,url:f.url||''})),proposal:n.proposal,followup:n.followup,edited:!!e.narrativeEdited};};
+ return {settings:programmeSettings(home,cfg),draft:read(home),preview:read(join(home,'show-preview')),episodes:state.episodes.slice(-15).reverse(),threads:state.threads.slice(-80).reverse().map(t=>({id:t.id,title:t.title,state:t.state,sourceDay:t.sourceDay,sourceUrl:t.sourceUrl,activatedAt:t.activatedAt,resolution:t.resolution?{summary:t.resolution.summary,evidenceIds:t.resolution.evidenceIds}:null,reportedIn:t.reportedIn||''})),events:new PublicEvents(home).list().map(e=>({id:e.id,title:e.title,happened:e.happened,handled:e.handled,changed:e.changed,enabled:e.enabled,current:e.current,day:e.day,checkedAt:e.verification.finishedAt,passed:e.verification.passed,scope:e.verification.scope}))};
+}

@@ -1,5 +1,6 @@
+import {readStoredFile as readFileSync, storedExists as existsSync} from '../src/storage.mjs';
 // 只制作换声版本；此入口不改动已发布/已定时的日账和远端作品。
-import {readFileSync,mkdirSync,existsSync} from 'node:fs';
+import {mkdirSync} from 'node:fs';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {execFile} from 'node:child_process';

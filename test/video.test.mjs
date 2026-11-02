@@ -6,7 +6,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {pcmWav,speechSimilarity,Speech} from '../src/speech.mjs';
 import {publicEpisodeData,episodeTurns,validateEpisodeLines} from '../src/broadcast.mjs';
-import {scheduledDate,validatePublishForm,Publisher} from '../src/publisher.mjs';
+import {scheduledDate,validatePublishForm,publishReceipt,Publisher} from '../src/publisher.mjs';
 import {defaultConfig,validateConfig} from '../src/config.mjs';
 
 test('旧配置关闭晚报；拒绝无效时间与相对输出路径',()=>{
@@ -37,7 +37,12 @@ test('发布前必须核对标题、描述、AI 已声明、公开可见和定�
  const state={title:'AI晚报',description:'公开日志'};
  const view={url:'https://creator.douyin.com/creator-micro/content/post/video',title:state.title,description:state.description,text:'作者声明：内容由AI生成',checks:[{label:'公开',checked:true},{label:'定时发布',checked:true}],scheduled:'2026-10-29 21:00',publishEnabled:true};
  validatePublishForm(view,state,'2026-10-29 21:00');
+ validatePublishForm({...view,text:'预览作者声明尚在加载',aiDeclared:true},state,'2026-10-29 21:00');
  for(const changed of [{title:'其他'},{description:'改动'},{text:'请选择内容由AI生成'},{scheduled:'2026-10-29 21:10'},{publishEnabled:false},{checks:[{label:'仅自己可见',checked:true}]}])assert.throws(()=>validatePublishForm({...view,...changed},state,'2026-10-29 21:00'));
+});
+test('原生发布成功回执只接受明确成功码，作品 ID 必须是无损字符串',()=>{
+ assert.deepEqual(publishReceipt({status_code:0,aweme_info:{aweme_id:'7702078521279040831'}}),{accepted:true,id:'7702078521279040831',code:0});
+ assert.equal(publishReceipt({status_code:1,aweme_id:'7702078521279040831'}).accepted,false);assert.equal(publishReceipt({message:'success'}).accepted,false);assert.equal(publishReceipt({status_code:0,aweme_id:7702078521279040831}).id,'');
 });
 test('已定时、已提交或发布结果不明的日记录不能再次点击发布',async t=>{
  const home=mkdtempSync(join(tmpdir(),'dy-publish-'));t.after(()=>rmSync(home,{recursive:true,force:true}));

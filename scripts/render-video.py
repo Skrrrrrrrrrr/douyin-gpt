@@ -12,6 +12,8 @@ def font(n,bold=False):return ImageFont.truetype(FONT if bold else REG,n)
 def wrap(text,f,width):
     rows=[];row=''
     for c in text:
+        if c in '，。！？、；：,.!?;:' and row and f.getlength(row+c)>width:
+            row+=c;continue
         if c=='\n' or f.getlength(row+c)>width:
             if row:rows.append(row)
             row='' if c=='\n' else c
@@ -33,8 +35,8 @@ def background(meta,turn,index,total):
     d.rounded_rectangle((54,70,1026,133),radius=31,fill=(255,255,255))
     d.text((80,85),'大肥鱼 × AI 搭子',font=font(32,True),fill=(74,61,110))
     d.text((700,88),'AI角色 · 合成配音',font=font(25),fill=(97,83,140))
-    d.text((61,177),'今天，我们干了啥？',font=font(76,True),fill=(43,38,78))
-    d.text((65,278),meta['day'].replace('-','.')+'  晚间日志',font=font(34),fill=(104,91,144))
+    d.text((61,177),meta.get('title','今天，我们干了啥？'),font=font(76,True),fill=(43,38,78))
+    d.text((65,278),meta.get('periodLabel',meta['day'].replace('-','.')+'  晚间日志'),font=font(34),fill=(104,91,144))
     d.rounded_rectangle((60,341,1020,409),radius=22,fill=(255,255,255))
     d.text((84,358),turn['chapter'],font=font(35,True),fill=(78,66,125))
     d.text((896,361),f'{index+1:02d} / {total:02d}',font=font(25),fill=(134,126,164))
@@ -51,7 +53,12 @@ def background(meta,turn,index,total):
     rows=wrap(turn['text'],font(46),890)
     if len(rows)>5:raise ValueError('字幕超过安全区域')
     for i,line in enumerate(rows):d.text((89,1436+i*55),line,font=font(46),fill=(43,42,68))
-    d.text((67,1782),f"统计截至 {meta['cutoff']} · 基于视频文案与抽样画面",font=font(28),fill=(106,99,135))
+    basis='代码检查与公开记录' if (meta.get('show') or {}).get('narrative',{}).get('mainline',{}).get('kind')=='growth' else '文案、画面与可用片段转写'
+    if (meta.get('show') or {}).get('narrative') and turn.get('stage')=='closing':
+        p=meta['data']['providers'];stats=f"视频记录 GPT {p['openai']['videoCount']} / DeepSeek {p['deepseek']['videoCount']} · 公开评论 {p['openai']['comments']+p['deepseek']['comments']} · 回复 {p['openai']['replies']+p['deepseek']['replies']}"
+        d.text((67,1766),stats,font=font(24),fill=(85,89,112))
+        d.text((67,1803),f"截至 {meta['cutoff']} · {basis}",font=font(24),fill=(106,99,135))
+    else:d.text((67,1782),f"统计截至 {meta['cutoff']} · {basis}",font=font(28),fill=(106,99,135))
     d.rounded_rectangle((60,1841,1020,1851),radius=5,fill=(217,209,236))
     d.rounded_rectangle((60,1841,60+int(960*(index+1)/total),1851),radius=5,fill=color)
     return im

@@ -1,3 +1,5 @@
 Pillow>=11,<13
 imageio-ffmpeg==0.7.0
 edge-tts==7.3.1
+
+pypinyin==0.55.0

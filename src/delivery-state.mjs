@@ -1,0 +1,4 @@
+export const COUNTED_DELIVERY_STATES=new Set(['sending','sent','accepted','uncertain']);
+export const meaningfulMessage=m=>!!(String(m.text||'').trim()||m.item||m.mediaAvailable||m.mediaKind);
+export function outgoingParts(outbox){return outbox.flatMap(item=>Array.isArray(item.steps)?item.steps.map(s=>({...s,parentId:item.id,contactId:item.contactId,provider:s.provider||item.provider,createdAt:s.createdAt||item.createdAt,updatedAt:s.updatedAt||item.updatedAt,day:s.day||item.day})):item);}
+export function isBotMessage(message,contactId,outbox){const ids=new Set([message.id,...(message.aliases||[])].filter(Boolean));return outgoingParts(outbox).some(o=>o.contactId===contactId&&COUNTED_DELIVERY_STATES.has(o.status)&&(ids.has(o.receipt?.messageId)||ids.has(o.sentMessageId)||o.kind!=='sticker'&&o.kind!=='voice_card'&&o.text===message.text&&Date.now()-Date.parse(o.updatedAt||o.createdAt)<600000));}

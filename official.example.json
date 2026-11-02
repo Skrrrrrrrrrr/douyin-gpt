@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "clientKey": "",
+  "clientSecret": "",
+  "redirectUri": "https://your-registered-domain.example/douyin/callback",
+  "boundAccountSecUid": "",
+  "accountConfirmed": false,
+  "contacts": {}
+}

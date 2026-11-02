@@ -1,0 +1,4 @@
+import {storedReadDir as readdirSync, readStoredFile as readFileSync, storedExists as existsSync} from './storage.mjs';
+
+import {join} from 'node:path';
+export function seriesEpisodes(home,{before='9999-12-31',limit=7}={}){const base=join(home,'video');if(!existsSync(base))return [];return readdirSync(base).filter(day=>/^\d{4}-\d{2}-\d{2}$/.test(day)&&day<before).sort().reverse().flatMap(day=>{try{const s=JSON.parse(readFileSync(join(base,day,'episode.json'),'utf8'));if(s.status!=='published')return [];return [{day,title:s.title,topicId:s.show?.topicId||'',format:s.show?.format||'recap',dialogue:((s.audio?.length?s.audio:s.turns)?.map(t=>({provider:t.speaker,say:t.text,question:''}))||s.show?.dialogue||[]).slice(0,8).map(t=>({provider:t.provider,say:String(t.say).slice(0,200),question:String(t.question||'').slice(0,100)})),url:s.platformUrl||''}];}catch(error){if(error.code?.startsWith('STORAGE_'))throw error;return [];}}).slice(0,limit);}

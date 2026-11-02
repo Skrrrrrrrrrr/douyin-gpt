@@ -26,14 +26,16 @@ import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import {sameMessageWindow} from '../../src/message-snapshot.mjs'
+import {groupDomInPage} from '../../src/group-dom.mjs'
 import { openPage, sleep } from '../../src/im-browser-bridge.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 
-let sendAttempted = false
-const out = (o) => { console.log(JSON.stringify({ ...o, send_attempted: sendAttempted }, null, 1)); process.exitCode = o.ok ? 0 : 1 }
+let sendAttempted = false, typedByAdapter = false
+const out = (o) => { console.log(JSON.stringify({ ...o, send_attempted: sendAttempted, typed_by_adapter: typedByAdapter }, null, 1)); process.exitCode = o.ok ? 0 : 1 }
 // 抖音 EditorKit 的空输入框包含 U+200B。只清理编辑器占位字符，保留 emoji 的 ZWJ。
-const normalizeEditorText = value => String(value || '').replace(/[\u200b\ufeff\r]/g, '').trim()
+const normalizeEditorText = value => String(value || '').replace(/[\u200b\u2060\ufeff\r]/g, '').trim()
 
 const argv = process.argv.slice(2)
 const argOf = (k, d) => { const i = argv.indexOf(k); return i >= 0 ? (argv[i + 1] ?? '') : d }
@@ -113,8 +115,17 @@ const readMessages = async (ev) => {
       var text = String(pc.text || pc.content_title || '').replace(/\\s+/g, ' ').trim();
       // GPT 版补充稳定消息 ID；没有可靠 ID 的消息只展示，不自动回复。
       var rawId = found.serverId || found.serverMessageId || found.server_id || found.messageId || found.message_id || found.clientMessageId || found.clientId || found.id || '';
+      var aliases = [found.serverId,found.serverMessageId,found.server_id,found.messageId,found.message_id,found.clientMessageId,found.clientId,found.id].filter(function(id){return typeof id === 'string' && id && id.length < 200});
       var stableId = (typeof rawId === 'string' || (typeof rawId === 'number' && Number.isSafeInteger(rawId))) ? String(rawId) : '';
-      out.push({ id: stableId, own: side, text: text, awe: pc.aweType || 0, item: pc.itemId ? String(pc.itemId) : '' });
+      var nativeVoice = found.type === 17 && pc.resource_url && Array.isArray(pc.resource_url.url_list) && pc.resource_url.url_list.length > 0;
+      var mediaAvailable = !pc.itemId && (!!(nativeVoice || pc.audio || pc.voice || pc.audioInfo || pc.voiceInfo) || !!n.querySelector?.('audio') || Array.prototype.some.call(n.querySelectorAll('img'),function(img){var b=img.getBoundingClientRect();return b.width>=70&&b.height>=70&&!/avatar|emoji|sticker/i.test(img.className+' '+img.alt)}));
+      var photo = !pc.itemId && Array.prototype.some.call(n.querySelectorAll('img'),function(img){var b=img.getBoundingClientRect();return b.width>=70&&b.height>=70&&!/avatar/i.test(img.className+' '+img.alt)});
+      var isVideo = !!(pc.video || pc.videoInfo || pc.video_info || n.querySelector?.('video,[class*=MessageItemVideo],[class*=MessageVideo]'));
+      var confirmed = found.serverId || found.serverMessageId || found.server_id || '';
+      var serverConfirmed = typeof confirmed === 'string' && /^\\d{15,25}$/.test(confirmed);
+      var created = Number(found.createdAt);
+      var createdAt = Number.isSafeInteger(created) && created > 946684800000 && created <= Date.now()+30000 ? new Date(created).toISOString() : '';
+      out.push({ id: stableId, aliases: aliases, own: side, createdAt: createdAt, text: text || ((mediaAvailable || photo) ? '[图片或语音消息]' : ''), mediaAvailable: mediaAvailable || photo, mediaKind: isVideo ? 'video' : photo ? 'image' : (nativeVoice||pc.audio||pc.voice||n.querySelector?.('audio') ? 'audio' : ''), serverConfirmed: serverConfirmed, awe: pc.aweType || 0, item: pc.itemId ? String(pc.itemId) : '' });
     });
     return JSON.stringify(out);
   })()`)
@@ -334,7 +345,10 @@ async function openConversation(ev, send, who, whoId) {
     const cur = await currentWho()
     if (whoId) {
       if (cur.id && cur.id === whoId) return { status: 'already-open', matched: { sec_uid: cur.id, nick: who || cur.nick } }
-      if (!cur.id) return { status: 'unverifiable', matched: null, hint: '会话开着但读不到对端 id，不敢确认发给谁 —— 请关掉会话重试，或改用昵称' }
+      if (!cur.id) {
+        const groupState=await ev(`(${groupDomInPage.toString()})({op:'editor'})`)
+        if(!groupState?.group?.isMember||groupState.hasDraft)return {status:'unverifiable',matched:null,hint:groupState?.hasDraft?'群聊已有未发送草稿，已保留':'当前会话身份无法核对，已停止'}
+      }
       // 当前开着的是别人 ⇒ 继续往下走，去列表里点对的那个
     } else if (who) {
       /**
@@ -666,10 +680,15 @@ async function main() {
         // 最新的在最后一条
         messages: ordered.slice(-60).map((m) => ({
           id: m.id || '',
+          aliases: m.aliases || [],
           from: m.from,
           text: String(m.text || '').slice(0, 2000),
           awe: m.awe || undefined,
           item: m.item || undefined,
+          mediaAvailable: m.mediaAvailable || undefined,
+          mediaKind: m.mediaKind || undefined,
+          serverConfirmed: m.serverConfirmed || undefined,
+          createdAt: m.createdAt || undefined,
         })),
       })
     }
@@ -719,6 +738,7 @@ async function main() {
     await c.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: pos.x, y: pos.y, button: 'left', clickCount: 1 })
     await c.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: pos.x, y: pos.y, button: 'left', clickCount: 1 })
     await sleep(400)
+    typedByAdapter = true
     await c.send('Input.insertText', { text })
     await sleep(800)
 
@@ -733,7 +753,7 @@ async function main() {
     if (String(await currentConvId(c.ev) || '') !== TOID) return out({ ok: false, sent: false, error: '按发送前会话身份发生变化' })
     const expectedMessages = JSON.parse(readFileSync(EXPECTED_FILE, 'utf8'))
     const latestMessages = (await readMessages(c.ev)).slice().reverse().slice(-60)
-    if (messageIdentity(latestMessages) !== messageIdentity(expectedMessages)) {
+    if (!sameMessageWindow(latestMessages,expectedMessages)) {
       return out({ ok: false, sent: false, error: '按发送前收到新消息或主人已回复，已取消；请核对输入框草稿' })
     }
 
@@ -754,15 +774,19 @@ async function main() {
     // 后来挖到头像左右这个判据，回读才算真的完整：
     //   「这段正文在**我发的**消息里从 N 条变成 N+1 条」—— 这才叫发成功了。
     // 如果光数总数，别人刚好发了同样的话就会假阳性。
-    const afterMsgs = await readMessages(c.ev)
+    let afterMsgs = await readMessages(c.ev)
     const norm = (s) => String(s || '').replace(/\s+/g, ' ').trim()
     const sentText = norm(text)
     const head = sentText.slice(0, 20)
     const isMine = (m) => m.from === 'me' && m.text
       && norm(m.text) === sentText
+    // 等待真实服务器 ID，不能将 UUID 本地回显当作组合回复的后续依据。
+    const oldIds=new Set(beforeMsgs.flatMap(m=>[m.id,...(m.aliases||[])]));
+    let confirmed=[];
+    for(let i=0;i<50;i++){confirmed=afterMsgs.filter(m=>isMine(m)&&m.serverConfirmed&&!oldIds.has(m.id));if(confirmed.length===1)break;await sleep(400);afterMsgs=await readMessages(c.ev);}
     const beforeCnt = beforeMsgs.filter(isMine).length
     const afterCnt = afterMsgs.filter(isMine).length
-    const readback = afterCnt > beforeCnt
+    const readback = afterCnt > beforeCnt && confirmed.length===1
     // 列表里最新那条是谁发的（我发完，这里应该翻成 'me'）
     const newest = afterMsgs[0] || null
     // 页面上出现过（弱证据，留作参考）
@@ -784,6 +808,8 @@ async function main() {
       // ⭐ 回读证据（只数我发的）
       readback,
       my_msg_before: beforeCnt, my_msg_after: afterCnt,
+      messageId: confirmed[0]?.id || '',
+      serverConfirmed: confirmed.length===1,
       sender_attribution: 'avatar-side（36px 头像落在列表左/右半边）',
       newest_from: newest ? newest.from : undefined,
       newest_text: newest ? String(newest.text || '').slice(0, 40) : undefined,

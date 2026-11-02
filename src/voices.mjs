@@ -4,6 +4,7 @@ import {mkdirSync,writeFileSync} from 'node:fs';
 import {dirname,join} from 'node:path';
 import {ROOT,modelConfig} from './config.mjs';
 import {Speech,speechSimilarity} from './speech.mjs';
+import {UsageMeter} from './usage.mjs';
 const run=promisify(execFile);
 export const VOICE_PRESETS={
  A:{id:'A',engine:'edge',label:'晓晓 · 参考白发',voice:'zh-CN-XiaoxiaoNeural',pitch:'+24Hz',rate:'+12%'},
@@ -22,8 +23,8 @@ export async function synthesizeEpisodeVoice({cfg,text,file,profile,signal}){
  if(profile.engine!=='edge')throw new Error('未知配音服务');
  if(!/^zh-CN-[A-Za-z]+Neural$/.test(profile.voice)||!/^[-+]\d+Hz$/.test(profile.pitch)||!/^[-+]\d+%$/.test(profile.rate))throw new Error('中文音色参数无效');
  mkdirSync(dirname(file),{recursive:true,mode:0o700});const input=file+'.input.json';writeFileSync(input,JSON.stringify({text,file,voice:profile.voice,pitch:profile.pitch,rate:profile.rate}),{mode:0o600});
- const result=await run(cfg.video.python,[join(ROOT,'scripts','edge-speech.py'),input],{timeout:75000,maxBuffer:1e6,signal});
+ const meter=new UsageMeter(modelConfig().meterHome);return meter.measure('edge','speech',profile.voice,async()=>{const result=await run(cfg.video.python,[join(ROOT,'scripts','edge-speech.py'),input],{timeout:75000,maxBuffer:1e6,signal});
  const meta=JSON.parse(result.stdout),similarity=speechSimilarity(text,meta.transcript);
  if(similarity<.82||!Number.isFinite(meta.duration)||meta.duration<=0)throw new Error('中文配音与原稿不一致或音频无效');
- return {...meta,similarity};
+ return {...meta,similarity,seconds:meta.duration};});
 }

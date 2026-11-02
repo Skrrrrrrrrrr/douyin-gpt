@@ -1,5 +1,7 @@
+import {storageFault} from './storage.mjs';
+import {storedExists as existsSync, readStoredFile as readFileSync} from './storage.mjs';
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import {mkdirSync, renameSync, unlinkSync, writeFileSync} from 'node:fs';
 import { join } from 'node:path';
 import { dayKey, defaultConfig, PROVIDERS, providerLabel, providerBrowse } from './config.mjs';
 import { atomicJson } from './store.mjs';
@@ -14,10 +16,14 @@ export const JOURNAL_SCHEMA = {
     reflections: strings, limitations: strings,
   }, required: ['overview', 'themes', 'highlights', 'reflections', 'limitations'],
 };
+import {efficiencySettings, compactJournalVideo, publicCodexEvidence} from './token-policy.mjs';
+
 export function journalVideoInput(v) {
   return { id: v.id, desc: v.desc || '', author: v.author || '', watchedAt: v.watchedAt || '', analysis: {
     summary: v.analysis?.summary || '', evidence: v.analysis?.evidence || '',
     recommend: v.analysis?.recommend === true, confidence: v.analysis?.confidence ?? null,
+    ...(v.analysis?.interest?{interest:{score:v.analysis.interest.score,topics:v.analysis.interest.topics,reason:v.analysis.interest.reason}}:{}),
+    ...(v.analysis?.perception?{perception:{transcript:v.analysis.perception.transcript||'',captions:v.analysis.perception.captions||'',captionSource:v.analysis.perception.captionSource||'',sampleStart:v.analysis.perception.sampleStart||0,sampleSeconds:v.analysis.perception.sampleSeconds||0,...publicCodexEvidence(v.analysis.perception)}}:{}),
   } };
 }
 export function validateDailySummary(value, videos) {
@@ -66,6 +72,7 @@ function atomicText(file, text) {
 export class DailyJournal {
   constructor({ home, cfg, store, models = {}, ledger, log = console.log, now = () => new Date() }) {
     Object.assign(this, { home, cfg, store, models, ledger, log, now });
+    for (const provider of PROVIDERS) models[provider]?.setCharacter?.(cfg);
     this.settings = { ...defaultConfig().journal, ...cfg.journal };
     this.snapshots = new Map();
     mkdirSync(join(home, 'reports'), { recursive: true, mode: 0o700 });
@@ -92,7 +99,7 @@ export class DailyJournal {
     try {
       const value = JSON.parse(readFileSync(join(this.home, 'reports', `${journalDay(day)}.summary.json`), 'utf8'));
       if (value.version === 1 && value.day === day && value.providers && typeof value.providers === 'object' && !Array.isArray(value.providers)) return value;
-    } catch {}
+    } catch (error) {if(storageFault(error))throw error;if(error.code?.startsWith('STORAGE_'))throw error;}
     return { version: 1, day, providers: {} };
   }
   cachedSummary(entry, videos) {
@@ -106,21 +113,21 @@ export class DailyJournal {
     const lines = [
       `# 抖音每日日志 · ${day}`, '',
       `北京时间更新：${clock(updatedAt)}。当天记录持续更新；全部 ${videos.length} 条观看记录均列在下方。`, '',
-      '> 内容依据视频文案与播放时抽取的画面；没有音频转写，不代表完整看完。视频中的历史、案件、地点等说法未另行核实。', '',
+      '> 内容依据视频文案、抽样画面与可用的片段转写，不代表完整看完或听完。视频中的历史、案件、地点等说法未另行核实。', '',
       '## 今日概况', '',
       '| 模型 | 已记录视频 | 当前每日上限 | 主动评论 | 回复评论 |',
       '|---|---:|---:|---:|---:|',
     ];
     for (const provider of PROVIDERS) {
       const subset = videos.filter(v => (v.provider || 'openai') === provider), own = actions.filter(a => (a.provider || 'openai') === provider);
-      lines.push(`| ${providerLabel(provider)} | ${subset.length} | ${providerBrowse(this.cfg, provider).videosPerDay} | ${own.filter(a => a.kind === 'comment').length} | ${own.filter(a => a.kind === 'reply').length} |`);
+      lines.push(`| ${providerLabel(provider)} | ${subset.length} | ${providerBrowse(this.cfg, provider).videosPerDay??'不限'} | ${own.filter(a => a.kind === 'comment').length} | ${own.filter(a => a.kind === 'reply').length} |`);
     }
     lines.push('', `今日共记录 ${videos.length} 条视频；${videos.filter(v => v.analysis?.recommend === true).length} 条被浏览模型标记为推荐。${videos.length ? `观看记录时段：${clock(videos[0].watchedAt)}—${clock(videos.at(-1).watchedAt)}。` : ''}`, '',
       '公开互动统计包含抖音已接收或发送结果待核对的尝试，不代表对方已读。回看线索用于整理内容，不改写浏览时的推荐判断。', '');
     for (const provider of PROVIDERS) {
       const subset = videos.filter(v => (v.provider || 'openai') === provider), entry = cache.providers[provider];
       const summary = this.cachedSummary(entry, subset);
-      const model = entry?.model || this.models[provider]?.config?.model || subset.find(v => v.model)?.model || (provider === 'openai' ? 'gpt-6.1-terra' : 'deepseek-flash');
+      const model = entry?.model || this.models[provider]?.config?.model || subset.find(v => v.model)?.model || (provider === 'openai' ? 'gpt-6-luna' : 'deepseek-flash');
       lines.push(`## ${providerLabel(provider)} 当日总结`, '', `模型：${escape(model)}；已记录 ${subset.length} 条视频。`, '');
       if (!subset.length) { lines.push('今天尚无该模型的观看记录。', ''); continue; }
       if (!summary) { lines.push('综合总结待生成，逐条内容和证据已完整保存。', ''); continue; }
@@ -143,6 +150,9 @@ export class DailyJournal {
         `${providerLabel(v.provider)} · ${clock(v.watchedAt)} · 作者：${escape(v.author || '未记录')}`, '',
         `内容：${escape(v.analysis?.summary || '没有可用摘要。')}`, '',
         `依据：${escape(v.analysis?.evidence || '没有可用证据记录。')}`, '',
+        ...(v.analysis?.perception?.transcript?[`片段转写：${escape(v.analysis.perception.transcript)}`, '']:[]),
+        ...(v.analysis?.perception?.captions?[`字幕（${v.analysis.perception.captionSource==='text-track'?'页面字幕':'抽样画面'}）：${escape(v.analysis.perception.captions)}`, '']:[]),
+        ...(v.analysis?.perception?.source==='codex-cli'?[`解析范围：Codex 按时间轴分析，画面抽样 ${v.analysis.perception.coverage?.firstFrameAt??0}～${v.analysis.perception.coverage?.lastFrameAt??0} 秒；音频转写${v.analysis.perception.coverage?.transcriptionComplete?'完整覆盖采集媒体':'部分或缺失'}。画面仍可能遗漏瞬间细节。`, '']:[]),
         `浏览判断：${v.analysis?.recommend === true ? '推荐' : '未标记推荐'}；把握 ${confidence}。`, '',
         `视频 ID：${escape(v.id)}`, '');
     });
@@ -165,7 +175,7 @@ export class DailyJournal {
     this.snapshots.set(day, signature);
     return paths[0];
   }
-  async refresh({ day = dayKey(this.now()), force = false, signal } = {}) {
+  async refresh({ day = dayKey(this.now()), force = false, signal, scheduled = false } = {}) {
     journalDay(day);
     if (!this.settings.enabled) return null;
     this.writeSnapshot(day);
@@ -174,18 +184,22 @@ export class DailyJournal {
       if (signal?.aborted) break;
       const videos = this.videos(day, provider), model = this.models[provider];
       if (!videos.length || typeof model?.dailySummary !== 'function') continue;
-      const fingerprint = digest({ version: 1, model: model.config?.model, videos: videos.map(journalVideoInput) });
+      const efficient = efficiencySettings(this.cfg).enabled;
+      const inputs = videos.map(v => efficient ? compactJournalVideo(journalVideoInput(v)) : journalVideoInput(v));
+      const fingerprint = digest({ version: efficient ? 2 : 1, model: model.config?.model, videos: inputs });
       const entry = cache.providers[provider] || {}, valid = this.cachedSummary(entry, videos);
+      if (!force && scheduled && valid && entry.scheduledAt && entry.model === model.config?.model) continue;
       if (!force && valid && entry.fingerprint === fingerprint) continue;
       if (!force && this.now().getTime() - (entry.lastAttemptAt || 0) < this.settings.refreshMinutes * 60000) continue;
       entry.lastAttemptAt = this.now().getTime(); cache.providers[provider] = entry; atomicJson(file, cache);
       try {
-        const result = validateDailySummary(await model.dailySummary({ day, videos: videos.map(journalVideoInput) }), videos);
+        const result = validateDailySummary(await model.dailySummary({ day, videos: inputs }), videos);
         if (signal?.aborted) break;
-        cache.providers[provider] = { fingerprint, model: model.lastResponse?.model || model.config?.model || providerLabel(provider), videoIds: videos.map(v => v.id), summary: result, generatedAt: this.now().toISOString(), lastAttemptAt: entry.lastAttemptAt };
+        cache.providers[provider] = { fingerprint, model: model.lastResponse?.model || model.config?.model || providerLabel(provider), videoIds: videos.map(v => v.id), summary: result, generatedAt: this.now().toISOString(), lastAttemptAt: entry.lastAttemptAt,
+          ...(scheduled || entry.scheduledAt ? {scheduledAt: scheduled ? this.now().toISOString() : entry.scheduledAt} : {}) };
         atomicJson(file, cache);
         this.log(`[${providerLabel(provider)}] 已更新 ${day} 每日总结，覆盖 ${videos.length} 条视频`);
-      } catch (error) {
+      } catch (error) {if(storageFault(error))throw error;
         this.log(`[${providerLabel(provider)}] 每日总结暂未生成：${error.message}`);
       }
       this.writeSnapshot(day);
@@ -196,6 +210,14 @@ export class DailyJournal {
     const now = this.now(), today = dayKey(now), yesterday = dayKey(new Date(now.getTime() - 86400000));
     // 跨天后继续补齐昨日最后一轮记录；既有日期文件保持归档。
     if (this.videos(yesterday).length) await this.refresh({ day: yesterday, signal });
-    if (!signal?.aborted) await this.refresh({ day: today, signal });
+    if (!signal?.aborted) {
+      if (this.settings.summaryMode !== 'evening') await this.refresh({ day: today, signal });
+      else {
+        this.writeSnapshot(today);
+        const parts = new Intl.DateTimeFormat('en-GB', {timeZone: 'Asia/Shanghai', hour: '2-digit', minute: '2-digit', hourCycle: 'h23'}).formatToParts(now);
+        const minute = Number(parts.find(p => p.type === 'hour').value) * 60 + Number(parts.find(p => p.type === 'minute').value);
+        if (minute >= this.settings.summaryHour * 60 + this.settings.summaryMinute) await this.refresh({day: today, signal, scheduled: true});
+      }
+    }
   }
 }

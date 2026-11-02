@@ -1,0 +1,18 @@
+services:
+  assistant:
+    environment:
+      DOUYIN_IMPORT_ORIGINAL_HOME: ${DOUYIN_IMPORT_DIR:?Set DOUYIN_IMPORT_DIR}
+      DOUYIN_IMPORT_ORIGINAL_ROOT: ${DOUYIN_IMPORT_ROOT:-}
+    volumes:
+      - type: bind
+        source: ${DOUYIN_IMPORT_DIR:?Set DOUYIN_IMPORT_DIR to the source runtime directory}
+        target: /import/runtime
+        read_only: true
+      - type: bind
+        source: ${DOUYIN_IMPORT_VIDEOS:?Set DOUYIN_IMPORT_VIDEOS to the video output directory}
+        target: /import/videos
+        read_only: true
+      - type: bind
+        source: ${DOUYIN_IMPORT_LOGS:?Set DOUYIN_IMPORT_LOGS to the daily log output directory}
+        target: /import/daily-logs
+        read_only: true
