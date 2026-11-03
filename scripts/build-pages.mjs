@@ -20,15 +20,8 @@ export function assemblePages(root,bundle,out){
   const write=(name,data)=>{const target=join(out,name);mkdirSync(dirname(target),{recursive:true});writeFileSync(target,data);};
   if(!bundle.includes('id="root"')||bundle.includes('src="/src/'))throw new Error('工作台还没有完成静态构建');
   write('index.html',hosted(bundle));
-  let login=readFileSync(join(root,'web/login.html'),'utf8');
-  login=login.replace('src="/login.js"','src="./pages-login.js"').replace('href="/login.css"','href="./login.css"').replace('href="/login"','href="./login.html"');
-  login=login.replace('src="/login-gpt.png"','src="./host/gpt.png"').replace('src="/login-deepseek.png"','src="./host/deepseek.png"');
-  login=login.replace('<div id="username-field"','<div class="field" id="backend-field"><label for="backend-url">管理服务地址</label><input id="backend-url" type="url" autocomplete="off" spellcheck="false" required><p class="field-hint">填写你的助手服务地址，支持域名、局域网 IP 和本机地址。</p></div><div id="username-field"');
-  login=login.replace('管理员账号</label>','本机管理员账号</label>').replace('class="primary-button">登录</button>','class="primary-button">连接并登录</button>');
-  login=login.replace('</head>','<link rel="stylesheet" href="./pages.css"></head>');
-  write('login.html',hosted(login));
-  for(const name of ['login.css','pages-login.js','connection.js']){const file=join(root,'web',name);if(name.endsWith('.css'))write(name,relativeAssets(readFileSync(file,'utf8')));else copyFileSync(file,join(out,name));}
-  write('pages.css','.login-footer,.local-access,.brand span,.filename{font-size:12px}.field-hint{line-height:1.55}#backend-url{min-width:0}.primary-button{box-shadow:none!important}');
+  write('login.html',hosted('<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>进入工作台</title><meta http-equiv="refresh" content="0;url=./index.html"></head><body><a href="./index.html">进入工作台</a></body></html>'));
+  copyFileSync(join(root,'web/connection.js'),join(out,'connection.js'));
   const copyAssets=(folder,prefix,extensions)=>{
     for(const entry of readdirSync(folder,{withFileTypes:true})){
       const source=join(folder,entry.name),name=prefix+'/'+entry.name;
@@ -40,7 +33,7 @@ export function assemblePages(root,bundle,out){
   copyAssets(join(root,'web/fonts'),'fonts',['.ttf','.woff','.woff2','.txt']);
   for(const name of ['gpt.png','deepseek.png']){mkdirSync(join(out,'host'),{recursive:true});copyFileSync(join(root,'assets/hosts',name),join(out,'host',name));}
   write('.nojekyll','');
-  write('HOSTING.md','这是独立静态管理界面，不会部署 GitHub Pages 或启动 Node 服务。后端地址由登录页配置，支持 HTTP/HTTPS 域名与 IP，跨域来源须在服务端明确允许。建议直接使用本机或 Docker 提供的同域管理页面。此目录不包含账号凭证、模型密钥、运行状态或聊天记录。\n');
+  write('HOSTING.md','这是独立静态管理界面，不会部署 GitHub Pages 或启动 Node 服务。后端地址由工作台的连接设置配置，支持 HTTP/HTTPS 域名与 IP，跨域来源须在服务端明确允许；管理页面无需账号密码。建议直接使用本机或 Docker 提供的同域管理页面。此目录不包含账号凭证、模型密钥、运行状态或聊天记录。\n');
   const files=[];const walk=(folder,prefix='')=>{for(const entry of readdirSync(folder,{withFileTypes:true})){const name=prefix+entry.name,target=join(folder,entry.name);if(entry.isDirectory())walk(target,name+'/');else files.push({path:name,bytes:statSync(target).size,sha256:sha(readFileSync(target))});}};walk(out);
   const pkg=JSON.parse(readFileSync(join(root,'package.json'),'utf8'));
   write('build-info.json',JSON.stringify({kind:'douyin-dashboard-static',version:pkg.version,files},null,2)+'\n');

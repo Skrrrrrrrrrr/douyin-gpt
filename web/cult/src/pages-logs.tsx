@@ -1,6 +1,6 @@
 import {useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {ArrowDown,ChevronUp,Download,Pause,Play,RefreshCw,Search,Terminal} from 'lucide-react';
-import {apiFetch,downloadFile,loginUrl} from '../../connection.js';
+import {apiFetch,downloadFile} from '../../connection.js';
 import {Button,Empty,Input,PageHeading,Select,Tabs} from './ui';
 import './service-logs.css';
 
@@ -12,10 +12,8 @@ const sources:[string,string][]=[['dashboard','管理服务'],['assistant','自�
 const labels:Record<Level,string>={info:'INFO',warn:'WARN',error:'ERROR',debug:'DEBUG'};
 const bytes=(value:number)=>value<1024?`${value} B`:value<1048576?`${(value/1024).toFixed(1)} KiB`:`${(value/1048576).toFixed(1)} MiB`;
 const clock=(value:string|null)=>value?new Date(value).toLocaleTimeString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}):'—';
-const redirect=()=>location.replace(loginUrl()+'#logs');
 async function read(path:string,signal:AbortSignal){
   const response=await apiFetch(path,{signal,cache:'no-store'});
-  if(response.status===401){redirect();throw new Error('登录已过期，请重新登录');}
   const value=await response.json();if(!response.ok)throw new Error(value.error||'日志暂时无法读取');return value as Snapshot;
 }
 
@@ -75,7 +73,7 @@ export function ServiceLogs(){
   const download=async()=>{
     if(downloading)return;setDownloading(true);
     try{await downloadFile('/api/logs/download?'+new URLSearchParams({source,archive,level,q:query}));}
-    catch(error){if((error as Error&{status?:number}).status===401)redirect();if(mounted.current)setError((error as Error).message);}
+    catch(error){if(mounted.current)setError((error as Error).message);}
     finally{if(mounted.current)setDownloading(false);}
   };
   const warnings=rows.filter(row=>row.level==='warn').length,errors=rows.filter(row=>row.level==='error').length;

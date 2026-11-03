@@ -13,7 +13,7 @@ import {Engine} from '../src/engine.mjs';
 import {Interests} from '../src/interests.mjs';
 import {DEFAULT_INTEREST_PROFILES} from '../src/interest-profiles.mjs';
 import {createDashboard} from '../src/dashboard.mjs';
-import {loginDashboard} from './helpers/dashboard-login.mjs';
+import {dashboardAccess} from './helpers/dashboard-access.mjs';
 
 function setup(t){const home=mkdtempSync(join(tmpdir(),'dy-feed-recovery-'));t.after(()=>rmSync(home,{recursive:true,force:true}));const cfg=defaultConfig();cfg.account={secUid:'bound-fixture',douyinId:'fixture'};cfg.reply.enabled=false;cfg.memory.enabled=false;cfg.monitor.enabled=false;cfg.monitor.notify=false;cfg.understanding.enabled=false;cfg.videoAnalysis.enabled=false;cfg.journal.enabled=false;cfg.deepseek.enabled=true;cfg.browse.videosPerRound=1;cfg.deepseek.browse.videosPerRound=1;cfg.discovery={...cfg.discovery,enabled:true,profiles:structuredClone(DEFAULT_INTEREST_PROFILES)};atomicJson(join(home,'config.json'),cfg);return {home,cfg,channels:new ChannelRecovery(home)};}
 const verification=(kind='discovery')=>Object.assign(new StopRequired('fixture verification','PAGE_VERIFICATION'),{pageKind:kind,pageUrl:kind==='discovery'?'https://www.douyin.com/search/fixture?type=video':undefined});
@@ -68,5 +68,5 @@ test('推荐接口明确要求验证时不切换其他读取方式，保持验�
  const h=setup(t),dy=new Douyin(h.home,{});let fallback=0;dy.fetchInPage=async()=>{throw verification('feed');};dy.feedFromPage=async()=>{fallback++;return [video(1)];};await assert.rejects(dy.feed(),e=>e.code==='PAGE_VERIFICATION');assert.equal(fallback,0);
 });
 test('独立搜索验证会在管理API中直接阻止重试，不改动后台运行目标',async t=>{
- const h=setup(t);pausedSearch(h);const desired={version:1,worker:false,dashboard:true,maintenanceUntil:0};atomicJson(join(h.home,'service-desired.json'),desired);const app=createDashboard(h.home,{port:0}),addr=await app.listen();t.after(()=>new Promise(resolve=>app.server.close(resolve)));const base='http://127.0.0.1:'+addr.port,cookie=await loginDashboard(base,h.home),r=await fetch(base+'/api/discovery/search',{method:'POST',headers:{cookie,'content-type':'application/json'},body:JSON.stringify({query:'fixture'})});assert.equal(r.status,409);assert.equal((await r.json()).code,'PAGE_VERIFICATION');assert.deepEqual(JSON.parse(readFileSync(join(h.home,'service-desired.json'))),desired);
+ const h=setup(t);pausedSearch(h);const desired={version:1,worker:false,dashboard:true,maintenanceUntil:0};atomicJson(join(h.home,'service-desired.json'),desired);const app=createDashboard(h.home,{port:0}),addr=await app.listen();t.after(()=>new Promise(resolve=>app.server.close(resolve)));const base='http://127.0.0.1:'+addr.port,cookie=await dashboardAccess(base,h.home),r=await fetch(base+'/api/discovery/search',{method:'POST',headers:{cookie,'content-type':'application/json'},body:JSON.stringify({query:'fixture'})});assert.equal(r.status,409);assert.equal((await r.json()).code,'PAGE_VERIFICATION');assert.deepEqual(JSON.parse(readFileSync(join(h.home,'service-desired.json'))),desired);
 });

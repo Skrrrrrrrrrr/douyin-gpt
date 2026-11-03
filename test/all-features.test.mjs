@@ -1,4 +1,4 @@
-import {loginDashboard} from './helpers/dashboard-login.mjs';
+import {dashboardAccess} from './helpers/dashboard-access.mjs';
 import test from 'node:test';import assert from 'node:assert/strict';import {mkdtempSync,rmSync,mkdirSync,writeFileSync,readFileSync} from 'node:fs';import {tmpdir} from 'node:os';import {join} from 'node:path';
 import {defaultConfig,validateConfig} from '../src/config.mjs';import {Store,atomicJson} from '../src/store.mjs';import {applyDashboardPatch,createDashboard,dashboardState} from '../src/dashboard.mjs';import {VideoUnderstanding} from '../src/understanding.mjs';import {Health} from '../src/health.mjs';import {classifyReview,safeVideoId,nativePublishedAt,cachedPublicCheck} from '../src/publication-review.mjs';import {chooseShowTopic,makeShow} from '../src/show.mjs';
 function temp(t){const home=mkdtempSync(join(tmpdir(),'dy-features-'));t.after(()=>rmSync(home,{recursive:true,force:true}));const cfg=defaultConfig();new Store(home);atomicJson(join(home,'config.json'),cfg);return {home,cfg};}
@@ -8,10 +8,10 @@ test('控制台补丁保留未改的嵌套设置，拒绝凭证、联系人及�
  assert.equal(next.deepseek.engagement.commentCooldownMinutes,47);assert.equal(next.deepseek.browse.everyMinutes,37);assert.equal(next.video.voiceProfiles.deepseek,'B');assert.equal(next.reply.routing.enabled,true);assert.equal(c.video.voiceProfiles.openai,'D');
  for(const p of [{account:{secUid:'other'}},{reply:{contacts:[]}},{video:{python:'anything'}},{reply:{routing:true}},{deepseek:{browse:[]}}, {video:{show:{secret:'x'}}}])assert.throws(()=>applyDashboardPatch(c,p));
 });
-test('控制台只在本机工作，API 需要会话且拒绝跨站来源；响应不包含配置中的未知秘密',async t=>{
+test('控制台只在本机工作，API 免登录且拒绝跨站来源；响应不包含配置中的未知秘密',async t=>{
  const h=temp(t);h.cfg.deepseek.apiKey='FAKE_SENSITIVE';atomicJson(join(h.home,'config.json'),h.cfg);atomicJson(join(h.home,'dashboard-job.json'),{status:'done',log:['','Users','test','private','file.mp4'].join('/')});
  const app=createDashboard(h.home,{port:0}),address=await app.listen();t.after(()=>new Promise(r=>app.server.close(r)));const base=`http://127.0.0.1:${address.port}`;
- assert.equal((await fetch(base+'/api/state')).status,401);const cookie=await loginDashboard(base,h.home);
+ assert.equal((await fetch(base+'/api/state')).status,200);const cookie=await dashboardAccess(base,h.home);
  const response=await fetch(base+'/api/state',{headers:{cookie}}),data=await response.json();assert.equal(response.status,200);const saved=await fetch(base+'/api/config',{method:'POST',headers:{cookie,'content-type':'application/json'},body:JSON.stringify({memory:{enabled:true}})});assert.equal(saved.status,200);assert.equal(JSON.parse(readFileSync(join(h.home,'config.json'),'utf8')).memory.enabled,true);assert.ok(!JSON.stringify(data).includes('FAKE_SENSITIVE'));assert.ok(!JSON.stringify(data).includes(['','Users','test'].join('/')));
  assert.equal((await fetch(base+'/api/config',{method:'POST',headers:{cookie,origin:'https://example.com','content-type':'application/json'},body:'{}'})).status,403);
  assert.equal((await fetch(base+'/api/media?kind=voice&id=../../.env',{headers:{cookie}})).status,400);

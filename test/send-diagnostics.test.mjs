@@ -9,7 +9,7 @@ import {commentDiagnostic,sendInfo} from '../src/send-diagnostics.mjs';
 import {createDashboard} from '../src/dashboard.mjs';
 import {defaultConfig} from '../src/config.mjs';
 import {Store,atomicJson} from '../src/store.mjs';
-import {loginDashboard} from './helpers/dashboard-login.mjs';
+import {dashboardAccess} from './helpers/dashboard-access.mjs';
 
 const V='7400000000000000001',CID='7400000000000000003';
 const empty={exists:true,text:'',editor:null,editorCount:0,visibleEditorCount:0,containerCount:1,draftCount:0,anyDraftPresent:false,replyTarget:'',replyTargetKnown:true,editorFocused:false,placeholderPresent:true};
@@ -85,7 +85,7 @@ test('后台 API 展示历史具体原因和结构诊断，私信步骤原因不
   store.data.outbox.push({id:'private',status:'not_sent',kind:'sticker',note:'上传前会话已变化',createdAt:new Date().toISOString()});store.save();
   const ledger=new CommentStore(home),a=ledger.draft('comment',{id:V},null,{text:'隔离界面测试',reason:'fixture',confidence:1});
   ledger.transition(a,'not_sent','已点击占位区，但编辑器未出现',undefined,commentDiagnostic({...empty,text:'SECRET_DRAFT',replyTarget:'SECRET_ID'},{code:'editor_missing',stage:'editor'}));
-  const app=createDashboard(home,{port:0}),addr=await app.listen();t.after(()=>new Promise(r=>app.server.close(r)));const base='http://127.0.0.1:'+addr.port,cookie=await loginDashboard(base,home);
+  const app=createDashboard(home,{port:0}),addr=await app.listen();t.after(()=>new Promise(r=>app.server.close(r)));const base='http://127.0.0.1:'+addr.port,cookie=await dashboardAccess(base,home);
   const dto=await(await fetch(base+'/api/state',{headers:{cookie}})).json();
   assert.equal(dto.comments[0].sendInfo.diagnostic.draftCount,0);assert.match(dto.comments[0].sendInfo.stageLabel,/输入框/);assert.equal(dto.comments[0].sendInfo.terminal,true);
   assert.equal(dto.replies[0].sendInfo.reason,'上传前会话已变化');assert.doesNotMatch(JSON.stringify(dto),/SECRET_DRAFT|SECRET_ID/);

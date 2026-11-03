@@ -13,22 +13,25 @@ import {sleep} from './browser.mjs';
 export function publisherSnapshotInPage(){
  const visible=e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&getComputedStyle(e).visibility!=='hidden'&&getComputedStyle(e).display!=='none';};
  const normalize=t=>String(t||'').replace(/[\u200b\ufeff]/g,'').trim();
- const title=document.querySelector('input[placeholder="填写作品标题，为作品获得更多流量"]');
- const editor=[...document.querySelectorAll('[contenteditable=true]')].find(visible);
+ const titles=[...document.querySelectorAll('input[placeholder="填写作品标题，为作品获得更多流量"]')].filter(visible),editors=[...document.querySelectorAll('[contenteditable=true]')].filter(visible);
+ const title=titles.length===1?titles[0]:null,editor=editors.length===1?editors[0]:null;
+ const formReady=!!title&&!title.disabled&&!title.readOnly&&!!editor&&!editor.disabled&&!editor.readOnly;
  const checks=[...document.querySelectorAll('label')].filter(visible).map(e=>({label:normalize(e.innerText),checked:!!e.querySelector('input:checked')}));
  const declaration=[...document.querySelectorAll('section')].find(e=>[...e.querySelectorAll('div')].some(n=>n.innerText.trim()==='自主声明'));
  const aiDeclared=!!declaration?.querySelector('[class*=selected]')&&declaration.querySelector('[class*=selectText]')?.innerText.trim()==='内容由AI生成';
- return {url:location.href,title:title?.value||'',description:normalize(editor?.innerText),aiDeclared,text:document.body.innerText.slice(0,20000),checks,scheduled:document.querySelector('input[placeholder="日期和时间"]')?.value||'',publishEnabled:[...document.querySelectorAll('button')].some(e=>visible(e)&&e.innerText.trim()==='发布'&&!e.disabled),links:[...document.querySelectorAll('a[href]')].map(e=>({text:normalize(e.innerText),href:e.href}))};
+ return {url:location.href,formReady,requiresUser:/验证码中间页|安全验证/.test(document.title),titleCandidates:titles.length,descriptionCandidates:editors.length,title:title?.value||'',description:normalize(editor?.innerText),aiDeclared,text:document.body.innerText.slice(0,20000),checks,scheduled:document.querySelector('input[placeholder="日期和时间"]')?.value||'',publishEnabled:[...document.querySelectorAll('button')].some(e=>visible(e)&&e.innerText.trim()==='发布'&&!e.disabled),links:[...document.querySelectorAll('a[href]')].map(e=>({text:normalize(e.innerText),href:e.href}))};
 }
 export function publisherControlInPage({text,selector}){
  const visible=e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&getComputedStyle(e).display!=='none'&&getComputedStyle(e).visibility!=='hidden';};
  let es=selector?[...document.querySelectorAll(selector)]:[...document.querySelectorAll('button,label,span,div')].filter(e=>e.innerText?.trim()===text);
  es=es.filter(visible).sort((a,b)=>a.getBoundingClientRect().width*a.getBoundingClientRect().height-b.getBoundingClientRect().width*b.getBoundingClientRect().height);
+ if(selector&&(es.length!==1||es[0].disabled||es[0].readOnly))return null;
  const e=es[0];if(!e)return null;e.scrollIntoView({block:'center',behavior:'instant'});const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,value:e.value??e.innerText};
 }
 const ev=(page,fn,arg)=>page.ev(`(${fn.toString()})(${arg===undefined?'':JSON.stringify(arg)})`);
 export function validatePublishForm(snapshot,state,at){
  if(new URL(snapshot.url).origin!=='https://creator.douyin.com')throw new Error('不在抖音创作者中心');
+ if(snapshot.formReady===false)throw new Error('发布表单尚未就绪或控件不唯一，未提交');
  if(snapshot.title!==state.title||snapshot.description!==state.description)throw new Error('发布前标题或描述发生变化，保留稿件');
  if(!snapshot.aiDeclared&&!/作者声明[:：]\s*内容由AI生成/.test(snapshot.text))throw new Error('未核对 AI 内容声明');
  if(!snapshot.checks.some(x=>x.label==='公开'&&x.checked))throw new Error('公开可见设置无法核对');
@@ -49,12 +52,25 @@ export function publishReceipt(json){
  return {accepted:code===0,id:id||'',code:typeof code==='number'?code:null};
 }
 export class Publisher{
- constructor(home,cfg,browser,{log=console.log}={}){Object.assign(this,{home,cfg,browser,log});this.dy=new Douyin(home,browser);}
+ constructor(home,cfg,browser,{log=console.log,wait=sleep,formTimeoutMs=30000,formPollMs=250}={}){Object.assign(this,{home,cfg,browser,log,wait,formTimeoutMs,formPollMs});this.dy=new Douyin(home,browser);}
  file(day){return join(this.home,'video',journalDay(day),'episode.json');}
  read(day){const state=JSON.parse(readFileSync(this.file(day),'utf8'));if(state.account?.secUid!==this.cfg.account.secUid)throw new Error('视频记录绑定的账号不一致');return state;}
  save(state){atomicJson(this.file(state.day),state);}
  async attach(){if(!this.page){this.page=await this.browser.page('publisher','https://creator.douyin.com/creator-micro/content/upload');await this.page.send('Network.enable');this.receipts=[];this.requests=new Map();this.page.on('Network.requestWillBeSent',e=>{const u=new URL(e.request.url);if(this.armedAt&&Date.now()>=this.armedAt&&e.request.method==='POST'&&['https://creator.douyin.com','https://www.douyin.com'].includes(u.origin)&&/aweme\/(?:create|publish)|content\/publish/.test(u.pathname))this.requests.set(e.requestId,{at:Date.now(),path:u.pathname});});this.page.on('Network.loadingFinished',async e=>{const r=this.requests.get(e.requestId);if(!r)return;this.requests.delete(e.requestId);try{const body=await this.page.send('Network.getResponseBody',{requestId:e.requestId});const value=JSON.parse(body.base64Encoded?Buffer.from(body.body,'base64').toString():body.body);this.receipts.push({...publishReceipt(value),at:r.at,path:r.path});}catch{}});}return this.page;}
  async snapshot(){return ev(await this.attach(),publisherSnapshotInPage);}
+ async waitForForm(){
+  const {formTimeoutMs:timeout,formPollMs:interval}=this;
+  if(!Number.isSafeInteger(timeout)||timeout<=0||timeout>60000||!Number.isSafeInteger(interval)||interval<=0)throw new Error('发布表单等待配置无效');
+  const deadline=Date.now()+timeout,checks=Math.ceil(timeout/interval);
+  for(let i=0;i<checks;i++){
+   const view=await this.snapshot();
+   if(view.requiresUser)throw Object.assign(new Error('发布页面需要本人完成抖音验证，未填写或提交'),{code:'PLATFORM_VERIFICATION'});
+   if(new URL(view.url).origin==='https://creator.douyin.com'&&new URL(view.url).pathname==='/creator-micro/content/post/video'&&view.formReady)return view;
+   const remaining=deadline-Date.now();if(remaining<=0||i===checks-1)break;
+   await this.wait(Math.min(interval,remaining));
+  }
+  throw Object.assign(new Error('视频发布表单尚未就绪或控件不唯一，已保留上传稿件，未提交发布'),{code:'PUBLISH_FORM_NOT_READY'});
+ }
  async click(options){const page=await this.attach();if(this.browser.headless)await page.send('Page.bringToFront');const p=await ev(page,publisherControlInPage,options);if(!p)throw new Error(`发布控件未找到：${options.text||options.selector}`);for(const type of ['mousePressed','mouseReleased'])await page.send('Input.dispatchMouseEvent',{type,x:p.x,y:p.y,button:'left',buttons:type==='mousePressed'?1:0,clickCount:1});await sleep(250);return p;}
  async fill(selector,text,{replace=false}={}){
   const p=await this.click({selector}),old=String(p.value||'').replace(/[\u200b\ufeff]/g,'').trim();
@@ -68,6 +84,7 @@ export class Publisher{
  async prepare(state,{at,reuseUpload=false}={}){
   await this.dy.checkAccount(this.cfg.account);const page=await this.attach();let current=await this.snapshot();
   if(at)scheduledDate(at);
+  if(current.url.includes('/content/post/video'))current=await this.waitForForm();
   if(!reuseUpload&&current.url.includes('/content/post/video')&&(current.title||current.description))throw new Error('存在未提交的视频稿件，需先核对；本程序不会覆盖');
   if(!reuseUpload){
    await this.browser.navigate(page,'https://creator.douyin.com/creator-micro/content/upload');
@@ -77,6 +94,9 @@ export class Publisher{
    await page.send('DOM.setFileInputFiles',{nodeId,files:[state.videoPath]});
    for(let i=0;i<120;i++){if((await this.snapshot()).url.includes('/content/post/video'))break;await sleep(500);if(i===119)throw new Error('上传后未进入视频发布页面');}
   }else if(current.title&&current.title!==state.title)throw new Error('待复用的上传稿件标题不匹配');
+  // A route change precedes the creator page's React fields. Wait for unique,
+  // editable controls before typing; the upload-complete and send guards follow.
+  await this.waitForForm();
   await this.fill('input[placeholder="填写作品标题，为作品获得更多流量"]',state.title);
   await this.fill('[contenteditable=true]',state.description);
   current=await this.snapshot();

@@ -32,7 +32,6 @@ import {OfficialClient} from './official.mjs';
 import {mediaHash} from './episode-review.mjs';
 import {outgoingParts} from './delivery-state.mjs';
 import {Douyin} from './douyin.mjs';
-import {DashboardAuth,authBody} from './dashboard-auth.mjs';
 import {sendInfo} from './send-diagnostics.mjs';
 import {prepareDashboardCors} from './dashboard-origins.mjs';
 import {dashboardNetwork,dashboardRequestOrigin,dashboardUrl} from './dashboard-network.mjs';
@@ -85,49 +84,26 @@ export async function dashboardState(home){
   replies:store.data.outbox.filter(o=>o.recipientKind!=='group').slice(-50).reverse().map(o=>({id:o.id,label:o.label,provider:o.provider||'openai',model:o.model,text:o.text,kind:o.kind||'text',sticker:o.sticker?{id:o.sticker.id,label:o.sticker.label}:null,status:o.status,sendInfo:sendInfo(o),createdAt:o.createdAt,contributors:o.contributors||[],steps:(o.steps||[]).map(s=>({kind:s.kind,status:s.status,text:s.kind==='text'?s.text:'',mediaId:s.sticker?.id||s.card?.id||'',label:s.sticker?.label||'',sendInfo:sendInfo(s)}))})),
   comments:comments.data.actions.slice(-40).reverse().map(a=>({id:a.id,kind:a.kind,provider:a.provider||'openai',text:a.text,status:a.status,sendInfo:sendInfo(a),videoId:a.videoId,createdAt:a.createdAt})),updatedAt:new Date().toISOString()};
 }
-export function createDashboard(home,{port=3146,host,publicUrl,authOptions,recoveryOptions}={}){
+export function createDashboard(home,{port=3146,host,publicUrl,recoveryOptions}={}){
  const settings=readConfig(home).dashboard,network=dashboardNetwork({host:host??process.env.DOUYIN_DASHBOARD_HOST??settings.host??'127.0.0.1',publicUrl:publicUrl??process.env.DOUYIN_DASHBOARD_URL??settings.publicUrl??''});
  const loginRecovery=new LoginRecovery(home,recoveryOptions);
- const auth=new DashboardAuth(home,authOptions),health=new Health(home,{notify:readConfig(home).monitor.notify}),logs=new ServiceLogs(home),requestLogs=new HttpRequestLogs(home);let changing=false,child=null;
+ const health=new Health(home,{notify:readConfig(home).monitor.notify}),logs=new ServiceLogs(home),requestLogs=new HttpRequestLogs(home);let changing=false,child=null;
  const bg=async(command,keep=false,internal=false)=>exec(process.execPath,[join(ROOT,'scripts/background.mjs'),command,...(keep?['--keep-browser']:[]),...(internal?['--maintenance']:[])],{cwd:ROOT,env:{...process.env,DOUYIN_GPT_HOME:home},timeout:65000});
  const server=http.createServer(async(req,res)=>{requestLogs.track(req,res);try{
   const port=server.address().port,origin=dashboardRequestOrigin(req,port,network);if(!origin)return json(res,403,{error:'管理服务地址不匹配，请检查公开地址配置'});
-  const url=new URL(req.url,origin),secure=origin.startsWith('https:');
+  const url=new URL(req.url,origin);
   res.setHeader('x-frame-options','DENY');res.setHeader('referrer-policy','no-referrer');res.setHeader('cross-origin-resource-policy','same-origin');
   res.setHeader('cache-control','no-store');res.setHeader('x-content-type-options','nosniff');
   const cors=prepareDashboardCors(req,res,home,origin);if(!cors.allowed)return json(res,403,{error:'来源不允许'});if(cors.preflight)return;
-  const authRequest=cors.remote?{headers:{authorization:req.headers.authorization}}:req;
-  const session=auth.session(authRequest,port),authenticated=!!session&&!session.mustChangePassword;
-  const sessionData=(s,expose=false)=>({authenticated:!!s,username:s?.username||'',mustChangePassword:s?.mustChangePassword||false,expiresAt:s?.expiresAt||null,...(expose&&s?.token?{accessToken:s.token}:{})});
-  if(url.pathname==='/api/auth/session'&&req.method==='GET')return json(res,200,sessionData(session));
-  if(url.pathname==='/api/auth/login'&&req.method==='POST'){
-   const body=await authBody(req),loggedIn=await auth.login(body.username,body.password);
-   if(!cors.remote)res.setHeader('set-cookie',auth.cookie(port,loggedIn.token,{secure}));return json(res,200,sessionData(loggedIn,cors.remote));
-  }
-  if(url.pathname==='/api/auth/logout'&&req.method==='POST'){
-   await authBody(req);auth.logout(authRequest,port);if(!cors.remote)res.setHeader('set-cookie',auth.clearCookie(port,{secure}));return json(res,200,{ok:true});
-  }
-  if(url.pathname==='/api/auth/password'&&req.method==='POST'){
-   if(!session)return json(res,401,{error:'请先登录',code:'AUTH_REQUIRED'});
-   const body=await authBody(req),updated=await auth.changePassword(body.currentPassword,body.newPassword);
-   if(!cors.remote)res.setHeader('set-cookie',auth.cookie(port,updated.token,{secure}));return json(res,200,sessionData(updated,cors.remote));
-  }
-  if(url.pathname==='/login'&&req.method==='GET'){
-   if(authenticated&&url.searchParams.get('password')!=='change'){res.writeHead(303,{location:'/'});res.end();return;}
-   res.setHeader('content-security-policy',"default-src 'none'; base-uri 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src 'self'; form-action 'self'; frame-ancestors 'none'");
-   res.writeHead(200,{'content-type':'text/html; charset=utf-8'});res.end(readFileSync(join(ROOT,'web/login.html')));return;
-  }
-  const loginAssets={'/brand/liuzuo-mark.png':'image/png','/brand/liuzuo-illustration.png':'image/png','/brand/logo.svg':'image/svg+xml','/brand/logo.png':'image/png','/fonts/outfit-variable.ttf':'font/ttf','/login.css':'text/css','/login.js':'text/javascript','/fonts/dm-sans-400.ttf':'font/ttf','/fonts/dm-sans-600.ttf':'font/ttf'};
-  loginAssets['/connection.js']='text/javascript';
-  if(req.method==='GET'&&Object.hasOwn(loginAssets,url.pathname)){
-   res.writeHead(200,{'content-type':loginAssets[url.pathname]});streamFile(join(ROOT,'web',url.pathname.slice(1)),res);return;
+  if(url.pathname.startsWith('/api/auth/'))return json(res,410,{error:'后台已取消登录，请直接打开工作台',code:'AUTH_REMOVED'});
+  if(req.method==='GET'&&['/login','/login.html'].includes(url.pathname)){res.writeHead(303,{location:'/'});res.end();return;}
+  const publicAssets={'/brand/liuzuo-mark.png':'image/png','/brand/liuzuo-illustration.png':'image/png','/brand/logo.svg':'image/svg+xml','/brand/logo.png':'image/png','/fonts/outfit-variable.ttf':'font/ttf','/fonts/dm-sans-400.ttf':'font/ttf','/fonts/dm-sans-600.ttf':'font/ttf'};
+  publicAssets['/connection.js']='text/javascript';
+  if(req.method==='GET'&&Object.hasOwn(publicAssets,url.pathname)){
+   res.writeHead(200,{'content-type':publicAssets[url.pathname]});streamFile(join(ROOT,'web',url.pathname.slice(1)),res);return;
   }
   if(req.method==='GET'&&['/login-gpt.png','/login-deepseek.png'].includes(url.pathname)){
    res.writeHead(200,{'content-type':'image/png'});streamFile(join(ROOT,'assets/hosts',url.pathname==='/login-gpt.png'?'gpt.png':'deepseek.png'),res);return;
-  }
-  if(!authenticated){
-   if(url.pathname==='/'&&req.method==='GET'){res.writeHead(303,{location:'/login'});res.end();return;}
-   return json(res,401,{error:session?'请先修改初始密码':'请先登录后台管理',code:session?'PASSWORD_CHANGE_REQUIRED':'AUTH_REQUIRED'});
   }
   if(url.pathname==='/'&&req.method==='GET'){
    res.writeHead(200,{'content-type':'text/html; charset=utf-8'});res.end(readFileSync(join(ROOT,'web/index.html')));return;

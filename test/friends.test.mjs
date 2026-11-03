@@ -16,7 +16,7 @@ import {Takeover} from '../src/takeover.mjs';
 import {StickerLibrary} from '../src/stickers.mjs';
 import {Backups} from '../src/backups.mjs';
 import {createDashboard,applyDashboardPatch} from '../src/dashboard.mjs';
-import {loginDashboard} from './helpers/dashboard-login.mjs';
+import {dashboardAccess} from './helpers/dashboard-access.mjs';
 import {runInNewContext} from 'node:vm';
 import {readMessages} from '../vendor/newjo/im-send.mjs';
 
@@ -174,13 +174,13 @@ test('恢复备份保留当前好友范围与单独停用状态，不复活旧�
  const h=setup(t),b=new Backups(h.home);const saved=b.create();h.cfg.reply.audience='allowlist';h.cfg.reply.friends.overrides=[{secUid:A,enabled:false}];atomicJson(join(h.home,'config.json'),h.cfg);const plan=b.proof(saved.id);b.restore(saved.id,plan.proof);const current=JSON.parse(readFileSync(join(h.home,'config.json')));assert.equal(current.reply.audience,'allowlist');assert.equal(current.reply.friends.overrides[0].enabled,false);
 });
 test('后台可设置新好友偏好和停用，陌生 ID、群聊与名单注入均拒绝',async t=>{
- const h=setup(t);await h.directory.sync({force:true});const app=createDashboard(h.home,{port:0}),addr=await app.listen();t.after(()=>new Promise(r=>app.server.close(r)));const base='http://127.0.0.1:'+addr.port,cookie=await loginDashboard(base,h.home),headers={cookie,'content-type':'application/json'};
+ const h=setup(t);await h.directory.sync({force:true});const app=createDashboard(h.home,{port:0}),addr=await app.listen();t.after(()=>new Promise(r=>app.server.close(r)));const base='http://127.0.0.1:'+addr.port,cookie=await dashboardAccess(base,h.home),headers={cookie,'content-type':'application/json'};
  const post=(path,body)=>fetch(base+path,{method:'POST',headers,body:JSON.stringify(body)});
  const dto=await(await fetch(base+'/api/state',{headers})).json();assert.equal(dto.friendAudience.verifiedCount,2);assert.equal(dto.contacts.length,2);
  assert.equal((await post('/api/contact',{contactId:A,preferences:{tone:'gentle'}})).status,200);assert.equal(JSON.parse(readFileSync(join(h.home,'config.json'))).reply.friends.overrides[0].preferences.tone,'gentle');
  assert.equal((await post('/api/contact',{contactId:A,enabled:false})).status,200);assert.equal((await post('/api/contact',{contactId:A,preferences:{tone:'casual'}})).status,400);assert.equal((await post('/api/contact',{contactId:A,enabled:true})).status,200);
  assert.equal((await post('/api/contact',{contactId:S,preferences:{tone:'gentle'}})).status,400);assert.equal((await post('/api/config',{reply:{friends:{overrides:[{secUid:S,enabled:true}]}}})).status,400);
- assert.equal((await fetch(base+'/api/friends/sync',{method:'POST'})).status,401);
+ assert.equal((await fetch(base+'/api/friends/sync',{method:'POST',headers:{origin:'https://evil.example'}})).status,403);
 });
 test('原生消息的服务器创建时间可以来自 SDK 的 Date getter',async()=>{
  const created=new Date(Date.now()-1000),m=Object.create({createdAt:created,serverId:'7700000000000000123',type:1});m.parsedContent={text:'测试消息'};

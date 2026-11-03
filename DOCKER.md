@@ -7,7 +7,7 @@
 - 业务数据卷：`database-data`；密钥、登录资料和媒体继续留在Mac。
 - 旧完整助手容器已退役，`3147`管理页与`6080`浏览器桌面不再作为正式入口。
 
-准备、迁移、故障处理和备份见[DATABASE.md](DATABASE.md)。通过域名或局域网访问Mac管理页仍可配置`DOUYIN_DASHBOARD_HOST`和`DOUYIN_DASHBOARD_URL`，保留管理员认证和明确来源校验。
+准备、迁移、故障处理和备份见[DATABASE.md](DATABASE.md)。通过域名或局域网访问Mac管理页仍可配置`DOUYIN_DASHBOARD_HOST`和`DOUYIN_DASHBOARD_URL`，管理页面免登录，保留明确来源校验。
 
 ```sh
 npm run storage:status
@@ -29,7 +29,7 @@ docker compose up -d
 docker compose ps
 ```
 
-默认管理页为 <http://127.0.0.1:3147>，浏览器桌面为 <http://127.0.0.1:6080/vnc.html>。发布地址和端口均可配置，不依赖GitHub Pages。Node在容器内直接监听配置的接口，不再通过仅限loopback的转发桥接。桌面密码保存在容器的 `/data/desktop/vnc-password.txt`；管理页沿用导入的管理员密码，未导入时会创建独立初始密码文件，首次登录需修改。原生VNC和浏览器调试端口仍不发布。
+默认管理页为 <http://127.0.0.1:3147>，浏览器桌面为 <http://127.0.0.1:6080/vnc.html>。发布地址和端口均可配置，不依赖GitHub Pages。Node在容器内直接监听配置的接口，不再通过仅限loopback的转发桥接。桌面密码保存在容器的 `/data/desktop/vnc-password.txt`；管理页面无需账号密码，打开地址即可进入。原生VNC和浏览器调试端口仍不发布。
 
 所有运行记录、凭据、登录态、媒体、输出和 Codex 授权保存在 `assistant-data` 数据卷。重建容器保留数据；不要使用 `docker compose down -v`，它会删除数据卷。镜像仅包含源码与公共素材，不包含本机聊天、API 密钥或登录态。
 
@@ -41,7 +41,7 @@ docker compose ps
 DOUYIN_DASHBOARD_BIND=0.0.0.0 docker compose up -d
 ```
 
-随后访问`http://运行Docker的主机IP:3147`，仍需管理员登录。浏览器桌面可独立设置`DOUYIN_DESKTOP_BIND`与`DOUYIN_DESKTOP_PORT`；它保留自己的桌面密码。
+随后访问`http://运行Docker的主机IP:3147`，无需管理员登录。浏览器桌面可独立设置`DOUYIN_DESKTOP_BIND`与`DOUYIN_DESKTOP_PORT`；它保留自己的桌面密码。
 
 域名或反向代理部署应配置对外来源，代理须保留原Host：
 
@@ -53,7 +53,7 @@ docker compose up -d
 
 `DOUYIN_DASHBOARD_PORT`可改变宿主机发布端口，容器内部仍为3147；改变外部端口时，同时用`DOUYIN_DASHBOARD_URL`填写含新端口的实际来源地址。公开来源支持HTTP/HTTPS、域名及IPv4/IPv6，不包含子路径、用户密码、查询参数或通配符。公网使用HTTPS；服务依据配置的公开来源设置Secure会话Cookie，不盲目信任转发头。
 
-只有独立静态页面与API分开部署时才需要额外配置跨域来源；来源逐项明确允许，仍使用管理员登录及独立Bearer会话。默认不向任意网页开放CORS。
+只有独立静态页面与API分开部署时才需要额外配置跨域来源；来源逐项明确允许，无需管理员登录或Bearer会话。默认不向任意网页开放CORS。
 
 ## 从当前 Mac 复制数据
 

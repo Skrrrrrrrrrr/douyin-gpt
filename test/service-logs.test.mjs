@@ -5,7 +5,7 @@ import {tmpdir} from 'node:os';import {join} from 'node:path';
 import {ServiceLogs,HttpRequestLogs,redactLog,logQuery} from '../src/service-logs.mjs';
 import {createDashboard} from '../src/dashboard.mjs';import {defaultConfig} from '../src/config.mjs';import {Store,atomicJson} from '../src/store.mjs';
 import {setDashboardOrigins} from '../src/dashboard-origins.mjs';
-import {loginDashboard,initialPassword} from './helpers/dashboard-login.mjs';
+import {dashboardAccess} from './helpers/dashboard-access.mjs';
 
 function fixture(t){const home=mkdtempSync(join(tmpdir(),'liuzuo-logs-'));t.after(()=>rmSync(home,{recursive:true,force:true}));return home;}
 const lines=amount=>Array.from({length:amount},(_,index)=>`[18:00:00] 记录 ${String(index).padStart(4,'0')} 中文`).join('\n')+'\n';
@@ -66,18 +66,17 @@ test('请求日志自动轮换并可查看归档，磁盘写入失败不影响�
   assert.equal(existsSync(writer.file+'.4'),false);assert.ok(new ServiceLogs(home).read({source:'http',archive:1}).entries.length>0);
 });
 
-test('认证 API 接入日志、增量、筛选与下载；HTTP 记录不包含输入、查询或凭证',async t=>{
+test('免登录 API 接入日志、增量、筛选与下载；HTTP 记录不包含输入、查询或凭证',async t=>{
   const home=fixture(t);new Store(home);const cfg=defaultConfig();cfg.monitor.notify=false;atomicJson(join(home,'config.json'),cfg);writeFileSync(join(home,'dashboard.log'),'[18:00:00] started\nError: fixture failure\n');
-  const app=createDashboard(home,{port:0}),address=await app.listen();t.after(()=>new Promise(resolve=>app.server.close(resolve)));const base=`http://127.0.0.1:${address.port}`,initial=initialPassword(home);
-  for(const path of ['/api/logs','/api/logs/download'])assert.equal((await fetch(base+path)).status,401);
-  const cookie=await loginDashboard(base,home),headers={cookie};const response=await fetch(base+'/api/logs',{headers});assert.equal(response.status,200);const snapshot=await response.json();assert.equal(snapshot.entries.length,2);
+  const app=createDashboard(home,{port:0}),address=await app.listen();t.after(()=>new Promise(resolve=>app.server.close(resolve)));const base=`http://127.0.0.1:${address.port}`;
+  for(const path of ['/api/logs','/api/logs/download'])assert.equal((await fetch(base+path)).status,200);
+  const cookie=await dashboardAccess(base,home),headers={cookie};const response=await fetch(base+'/api/logs',{headers});assert.equal(response.status,200);const snapshot=await response.json();assert.equal(snapshot.entries.length,2);
   const httpBefore=readFileSync(join(home,'http-requests.log'),'utf8');await fetch(base+'/api/logs?after='+encodeURIComponent(snapshot.endCursor),{headers});assert.equal(readFileSync(join(home,'http-requests.log'),'utf8'),httpBefore,'成功读取日志不写入自己的轮询记录');
   assert.equal((await fetch(base+'/api/state?token=PRIVATE_QUERY_CONTENT',{headers:{cookie}})).status,200);await fetch(base+'/api/state',{headers:{authorization:'Bearer PRIVATE_HEADER_CONTENT'}});await fetch(base+'/api/auth/login',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({username:'admin',password:'PRIVATE_BODY_CONTENT'})});
-  const recorded=readFileSync(join(home,'http-requests.log'),'utf8');for(const secret of [initial,'PRIVATE_QUERY_CONTENT','PRIVATE_HEADER_CONTENT','PRIVATE_BODY_CONTENT',cookie.split('=')[1]])assert.ok(!recorded.includes(secret),secret);
-  const httpRows=recorded.trim().split('\n').map(line=>JSON.parse(line));assert.ok(httpRows.some(row=>row.path==='/api/state'&&row.status===200));assert.ok(httpRows.some(row=>row.status===401&&row.level==='warn'));
+  const recorded=readFileSync(join(home,'http-requests.log'),'utf8');for(const secret of ['PRIVATE_QUERY_CONTENT','PRIVATE_HEADER_CONTENT','PRIVATE_BODY_CONTENT'])assert.ok(!recorded.includes(secret),secret);
+  const httpRows=recorded.trim().split('\n').map(line=>JSON.parse(line));assert.ok(httpRows.some(row=>row.path==='/api/state'&&row.status===200));assert.ok(httpRows.some(row=>row.status===410&&row.level==='warn'));
   const filtered=await(await fetch(base+'/api/logs?level=error&q=fixture',{headers})).json();assert.equal(filtered.entries.length,1);
   const output=await fetch(base+'/api/logs/download?level=error',{headers});assert.equal(output.status,200);assert.match(output.headers.get('content-disposition'),/attachment/);assert.match(await output.text(),/fixture failure/);
   assert.equal((await fetch(base+'/api/logs?file=../../.env',{headers})).status,400);
-  const origin='https://logs-fixture.github.io';setDashboardOrigins(home,[origin]);const login=await fetch(base+'/api/auth/login',{method:'POST',headers:{origin,'sec-fetch-site':'cross-site','content-type':'application/json'},body:JSON.stringify({username:'admin',password:'test-only-dashboard-password-42'})});const token=(await login.json()).accessToken;
-  const remote={origin,'sec-fetch-site':'cross-site',authorization:'Bearer '+token};assert.equal((await fetch(base+'/api/logs',{headers:remote})).status,200);assert.equal((await fetch(base+'/api/logs/download',{headers:remote})).status,200);
+  const origin='https://logs-fixture.github.io';setDashboardOrigins(home,[origin]);const remote={origin,'sec-fetch-site':'cross-site'};assert.equal((await fetch(base+'/api/logs',{headers:remote})).status,200);assert.equal((await fetch(base+'/api/logs/download',{headers:remote})).status,200);
 });

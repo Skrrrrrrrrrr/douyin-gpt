@@ -11,7 +11,7 @@ import {GroupMessenger} from '../src/group-messenger.mjs';
 import {groupCalled,groupKey,groupReceipt,groupWindowCompatible,validGroup,groupReplyProvider,groupRoutingText} from '../src/group-policy.mjs';
 import {groupDomInPage} from '../src/group-dom.mjs';
 import {applyDashboardPatch,createDashboard} from '../src/dashboard.mjs';
-import {loginDashboard} from './helpers/dashboard-login.mjs';
+import {dashboardAccess} from './helpers/dashboard-access.mjs';
 import {accountFingerprint} from '../src/reply-audience.mjs';
 import {Gpt} from '../src/openai.mjs';
 
@@ -103,8 +103,8 @@ test('SDK 群ID、成员资格与发送者来自同一原生消息对象，不�
  c.isMember=false;assert.equal(ev({op:'messages',id:G.id,shortId:G.shortId,ownUid:owner.uid}).verified,false);
 });
 test('后台群回复独立于私信，操作需本机认证和已核对群身份',async t=>{
- const h=setup(t);await h.groups.sync();const g={...G,key:groupKey(G)},action=h.store.groupDraft(g,[incoming('x','GPT你好')],'群回复','点名');action.receipt={id:'7700000000000000011'};h.store.transition(action,'accepted');const app=createDashboard(h.home,{port:0}),a=await app.listen();t.after(()=>new Promise(r=>app.server.close(r)));const base='http://127.0.0.1:'+a.port,cookie=await loginDashboard(base,h.home),headers={cookie,'content-type':'application/json'};
+ const h=setup(t);await h.groups.sync();const g={...G,key:groupKey(G)},action=h.store.groupDraft(g,[incoming('x','GPT你好')],'群回复','点名');action.receipt={id:'7700000000000000011'};h.store.transition(action,'accepted');const app=createDashboard(h.home,{port:0}),a=await app.listen();t.after(()=>new Promise(r=>app.server.close(r)));const base='http://127.0.0.1:'+a.port,cookie=await dashboardAccess(base,h.home),headers={cookie,'content-type':'application/json'};
  const dto=await(await fetch(base+'/api/state',{headers})).json();assert.equal(dto.replies.length,0);assert.equal(dto.groupReplies.length,1);assert.equal(dto.groupChats.groups.length,2);assert.doesNotMatch(JSON.stringify(dto.groupReplies),/groupShortId|senderUid/);
- assert.equal((await fetch(base+'/api/groups',{method:'POST',body:'{}'})).status,401);
+ assert.equal((await fetch(base+'/api/groups',{method:'POST',headers:{origin:'https://evil.example'},body:'{}'})).status,403);
  const post=b=>fetch(base+'/api/groups',{method:'POST',headers,body:JSON.stringify(b)});assert.equal((await post({id:groupKey(G),action:'pause'})).status,200);assert.equal((await post({id:'group:fake',action:'resume'})).status,400);assert.equal((await post({id:groupKey(G),action:'resume'})).status,200);
 });

@@ -38,7 +38,7 @@ test('发布前必须核对标题、描述、AI 已声明、公开可见和定�
  const view={url:'https://creator.douyin.com/creator-micro/content/post/video',title:state.title,description:state.description,text:'作者声明：内容由AI生成',checks:[{label:'公开',checked:true},{label:'定时发布',checked:true}],scheduled:'2026-10-29 21:00',publishEnabled:true};
  validatePublishForm(view,state,'2026-10-29 21:00');
  validatePublishForm({...view,text:'预览作者声明尚在加载',aiDeclared:true},state,'2026-10-29 21:00');
- for(const changed of [{title:'其他'},{description:'改动'},{text:'请选择内容由AI生成'},{scheduled:'2026-10-29 21:10'},{publishEnabled:false},{checks:[{label:'仅自己可见',checked:true}]}])assert.throws(()=>validatePublishForm({...view,...changed},state,'2026-10-29 21:00'));
+ for(const changed of [{title:'其他'},{description:'改动'},{text:'请选择内容由AI生成'},{scheduled:'2026-10-29 21:10'},{publishEnabled:false},{formReady:false},{checks:[{label:'仅自己可见',checked:true}]}])assert.throws(()=>validatePublishForm({...view,...changed},state,'2026-10-29 21:00'));
 });
 test('原生发布成功回执只接受明确成功码，作品 ID 必须是无损字符串',()=>{
  assert.deepEqual(publishReceipt({status_code:0,aweme_info:{aweme_id:'7702078521279040831'}}),{accepted:true,id:'7702078521279040831',code:0});
@@ -49,7 +49,7 @@ test('已定时、已提交或发布结果不明的日记录不能再次点击�
  const dir=join(home,'video','2026-10-29');mkdirSync(dir,{recursive:true});const cfg=defaultConfig();cfg.account.secUid='OWNER';
  const p=new Publisher(home,cfg,{page:async()=>{throw new Error('不应访问浏览器');}},{log:()=>{}});
  for(const status of ['scheduled','published','submitted']){writeFileSync(join(dir,'episode.json'),JSON.stringify({day:'2026-10-29',status,account:cfg.account}));assert.equal((await p.publish('2026-10-29',{live:true})).status,status);}
- writeFileSync(join(dir,'episode.json'),JSON.stringify({day:'2026-10-29',status:'uncertain',account:cfg.account}));await assert.rejects(p.publish('2026-10-29',{live:true}),/不自动重发/);
+ for(const status of ['publishing','uncertain']){writeFileSync(join(dir,'episode.json'),JSON.stringify({day:'2026-10-29',status,account:cfg.account}));await assert.rejects(p.publish('2026-10-29',{live:true}),/不自动重发/);}
 });
 test('Realtime 配音收到完整音频及转写后才保存，不接受不一致内容',async t=>{
  const dir=mkdtempSync(join(tmpdir(),'dy-speech-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));

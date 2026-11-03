@@ -12,7 +12,7 @@ import {LoginRecovery,loginDomInPage} from '../src/login-recovery.mjs';
 import {Health} from '../src/health.mjs';
 import {Engine} from '../src/engine.mjs';
 import {createDashboard} from '../src/dashboard.mjs';
-import {loginDashboard} from './helpers/dashboard-login.mjs';
+import {dashboardAccess} from './helpers/dashboard-access.mjs';
 import {bootstrapWithRetry} from '../src/service-control.mjs';
 import {Takeover} from '../src/takeover.mjs';
 import {unanswered} from '../src/engine.mjs';
@@ -94,7 +94,7 @@ test('已有草稿在模型生成前被识别，原输入保持未处理，下�
 });
 test('登录恢复 API 与二维码均需要已改初始密码的会话，HTTP 日志不记录短信输入',async t=>{
  const h=fixture(t),app=createDashboard(h.home,{port:0,recoveryOptions:{probe:async()=>({ready:true})}}),addr=await app.listen();t.after(()=>new Promise(r=>app.server.close(r)));const base='http://127.0.0.1:'+addr.port;
- assert.equal((await fetch(base+'/api/recovery/image')).status,401);assert.equal((await fetch(base+'/api/recovery/login',{method:'POST',body:'{}'})).status,401);const cookie=await loginDashboard(base,h.home),headers={cookie,'content-type':'application/json'};
+ assert.equal((await fetch(base+'/api/recovery/image',{headers:{origin:'https://evil.example'}})).status,403);assert.equal((await fetch(base+'/api/recovery/login',{method:'POST',headers:{origin:'https://evil.example'},body:'{}'})).status,403);const cookie=await dashboardAccess(base,h.home),headers={cookie,'content-type':'application/json'};
  const response=await fetch(base+'/api/recovery/login',{method:'POST',headers,body:JSON.stringify({action:'check',phone:'13900000000',code:'123456'})});assert.equal(response.status,200);assert.equal((await response.json()).ready,true);assert.equal((await fetch(base+'/api/recovery/image',{headers})).status,410);assert.doesNotMatch(readFileSync(join(h.home,'http-requests.log'),'utf8'),/13900000000|123456/);
 });
 test('搜索页验证只暂停独立搜索，浏览与私信可继续，不重复触发受限搜索',async t=>{

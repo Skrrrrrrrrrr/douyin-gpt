@@ -1,4 +1,4 @@
-import {loginDashboard} from './helpers/dashboard-login.mjs';
+import {dashboardAccess} from './helpers/dashboard-access.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync, rmSync, readFileSync} from 'node:fs';
@@ -235,7 +235,7 @@ test('控制台真实接口返回两个档案，反馈不允许写入错误角�
   const h = setup(t); h.store.addVideo(video(), review(), {provider: 'deepseek'});
   const app = createDashboard(h.home, {port: 0}), address = await app.listen();
   t.after(() => new Promise(resolve => app.server.close(resolve)));
-  const base = `http://127.0.0.1:${address.port}`, cookie = await loginDashboard(base, h.home);
+  const base = `http://127.0.0.1:${address.port}`, cookie = await dashboardAccess(base, h.home);
   const state = await (await fetch(base + '/api/state', {headers: {cookie}})).json();
   assert.deepEqual(Object.keys(state.interestProfiles), ['openai', 'deepseek']);
   assert.equal(state.interestProfiles.deepseek.topics.length, 5);

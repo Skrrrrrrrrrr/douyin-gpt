@@ -1,6 +1,6 @@
 {
   "name": "douyin-gpt",
-  "version": "0.12.0",
+  "version": "0.12.1",
   "private": true,
   "type": "module",
   "description": "双 AI 抖音节目：单集公开主线、跨期回访、真实成长与双人问答",
@@ -31,7 +31,6 @@
     "dashboard": "node scripts/dashboard.mjs start",
     "dashboard:status": "node scripts/dashboard.mjs status",
     "dashboard:stop": "node scripts/dashboard.mjs stop",
-    "dashboard:auth": "node scripts/dashboard-auth.mjs",
     "show:preview": "node scripts/preview-show.mjs",
     "video:review": "node src/cli.mjs video-review",
     "stickers:inspect": "node scripts/stickers.mjs inspect",

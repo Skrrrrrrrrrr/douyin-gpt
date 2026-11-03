@@ -43,21 +43,34 @@ export function commentVideoIdFromUrl(value) {
 
 export class Comments {
   constructor(home, browser) {
-    this.home=home;this.browser=browser;this.dy=new Douyin(home,browser);this.page=null;this.receipts=[];this.requests=new Map();this.cache=new Map();this.wait=sleep;
+    this.home=home;this.browser=browser;this.dy=new Douyin(home,browser);this.page=null;this.attaching=null;this.pageListeners=[];this.receipts=[];this.requests=new Map();this.cache=new Map();this.wait=sleep;
   }
   async attach() {
-    if(this.page)return this.page;
-    const page=await this.browser.page('comments','https://www.douyin.com/');this.page=page;
-    await page.send('Network.enable');
-    page.on('Network.requestWillBeSent', event=>{
+    if(!this.attaching)this.attaching=this.attachPage();
+    const pending=this.attaching;
+    try{return await pending;}finally{if(this.attaching===pending)this.attaching=null;}
+  }
+  async attachPage() {
+    // Browser.page checks the socket and reconnects its existing target. Do not
+    // bypass it with a stale Comments.page, or retry any in-flight send here.
+    const page=await this.browser.page('comments','https://www.douyin.com/');
+    if(page===this.page)return page;
+    for(const remove of this.pageListeners)if(typeof remove==='function')remove();
+    this.pageListeners=[];this.page=null;this.requests.clear();this.receipts=[];this.cache.clear();
+    try{await page.send('Network.enable');}catch(error){page.close?.();throw error;}
+    this.page=page;
+    this.pageListeners.push(page.on('Network.requestWillBeSent', event=>{
+      if(this.page!==page)return;
       const request=commentRequest(event.request);if(!request)return;
       this.requests.set(event.requestId,request);
       if(this.requests.size>200)this.requests.delete(this.requests.keys().next().value);
-    });
-    page.on('Network.loadingFinished', async event=>{
+    }));
+    this.pageListeners.push(page.on('Network.loadingFinished', async event=>{
+      if(this.page!==page)return;
       const request=this.requests.get(event.requestId);if(!request)return;
       this.requests.delete(event.requestId);
       const body=await page.send('Network.getResponseBody',{requestId:event.requestId});
+      if(this.page!==page)return;
       const json=JSON.parse(body.base64Encoded?Buffer.from(body.body,'base64').toString('utf8'):body.body);
       if(/\/publish(?:\/|$)/.test(request.path)){
         this.receipts.push({request,statusCode:json.status_code,comment:json.comment||null,at:Date.now()});
@@ -65,7 +78,7 @@ export class Comments {
       }
       for(const c of json.comments||[]){const item=normalizeComment(c,request.videoId,request.rootId);if(item?.videoId)this.cache.set(item.id,item);}
       if(this.cache.size>1000)this.cache.delete(this.cache.keys().next().value);
-    });
+    }));
     return page;
   }
   async notices(account) {

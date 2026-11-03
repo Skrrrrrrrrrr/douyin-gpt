@@ -7,8 +7,6 @@ export function setMediaRevision(value:string):void;
 export function getBackendUrl():string;
 export function backendApiUrl(path:string):string;
 export function setBackendUrl(value:string):void;
-export function hasRemoteSession():boolean;
-export function loginUrl(changePassword?:boolean):string;
 export function appUrl():string;
 export function assetUrl(path:string):string;
 export function downloadFile(path:string):Promise<void>;
