@@ -17,6 +17,7 @@ import {seriesEpisodes} from './series.mjs';
 import {characterProfile, characterInstructions, characterContext} from './characters.mjs';
 import {Storylines} from './storylines.mjs';
 import {episodePresentation} from './show-topics.mjs';
+import {shiftDay} from './night-service.mjs';
 const run=promisify(execFile);
 const hash=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex');
 export const BROADCAST_SCHEMA={type:'object',additionalProperties:false,properties:{recap:{type:'string'},highlight:{type:'string'}},required:['recap','highlight']};
@@ -27,6 +28,17 @@ export function publicEpisodeData(journal,ledger,day,now=new Date()){
  }
  return {day,timeZone:'Asia/Shanghai',cutoff:new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',hour:'2-digit',minute:'2-digit',hour12:false}).format(now),providers,totalVideos:PROVIDERS.reduce((n,p)=>n+providers[p].videoCount,0)};
 }
+export function overnightEpisodeData(journal,ledger,day,cfg,now=new Date()){
+ journalDay(day);const previous=shiftDay(day,-1),startText=`${previous} ${String(cfg.service.overnight.startHour).padStart(2,'0')}:${String(cfg.service.overnight.startMinute).padStart(2,'0')}`;
+ const start=Date.parse(startText.replace(' ','T')+':00+08:00'),due=Date.parse(`${day}T${String(cfg.video.hour).padStart(2,'0')}:${String(cfg.video.minute).padStart(2,'0')}:00+08:00`),end=Math.min(now.getTime(),due),providers={};
+ const inside=value=>{const at=Date.parse(value);return Number.isFinite(at)&&at>=start&&at<end;};
+ for(const provider of PROVIDERS){
+  const unique=new Map();for(const date of [previous,day])for(const video of journal.videos(date,provider))if(inside(video.watchedAt))unique.set(video.id,video);
+  const videos=[...unique.values()].sort((a,b)=>Date.parse(a.watchedAt)-Date.parse(b.watchedAt)),actions=(ledger.data.actions||[]).filter(a=>(a.provider||'openai')===provider&&a.status==='sent'&&inside(a.sentAt||a.updatedAt||a.createdAt));
+  providers[provider]={label:providerLabel(provider),videoCount:videos.length,comments:actions.filter(a=>a.kind==='comment').length,replies:actions.filter(a=>a.kind==='reply').length,videos:videos.map(journalVideoInput)};
+ }
+ return {day,timeZone:'Asia/Shanghai',cutoff:new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(end)),overnight:true,morning:true,window:{startAt:new Date(start).toISOString(),endAt:new Date(end).toISOString(),startText},providers,totalVideos:PROVIDERS.reduce((n,p)=>n+providers[p].videoCount,0)};
+}
 export function weeklyDay(day,cfg){return cfg.video.weekly.enabled&&new Date(journalDay(day)+'T00:00:00Z').getUTCDay()===cfg.video.weekly.weekday;}
 export function publicWeeklyData(journal,ledger,day,days=7,now=new Date()){
  const dates=Array.from({length:days},(_,i)=>new Date(Date.parse(journalDay(day)+'T00:00:00Z')-(days-1-i)*86400000).toISOString().slice(0,10)),daily=dates.map(d=>publicEpisodeData(journal,ledger,d,now)),providers={};
@@ -36,16 +48,16 @@ export function publicWeeklyData(journal,ledger,day,days=7,now=new Date()){
 const zhNumber=n=>{if(n<10)return '零一二三四五六七八九'[n];if(n<20)return '十'+(n%10?zhNumber(n%10):'');if(n<100)return zhNumber(Math.floor(n/10))+'十'+(n%10?zhNumber(n%10):'');return String(n);};
 const measure=n=>n===2?'两':zhNumber(n);
 export function episodeTurns(data,lines,{characters=Object.fromEntries(PROVIDERS.map(p=>[p,characterProfile({},p)]))}={}){
- const g=data.providers.openai,d=data.providers.deepseek;
+ const g=data.providers.openai,d=data.providers.deepseek,morning=data.morning||data.overnight;
  const turns=[
-  {speaker:'openai',chapter:'今晚开播',text:`晚上好，我是 ${characters.openai.name}。${data.weekly?'来翻翻这周的公开日志。':'先把今天的选片理一理。'}`},
-  {speaker:'deepseek',chapter:'今日账本',text:`我是 ${characters.deepseek.name}。${data.weekly?'这段时间':'今天'}一共记录了${measure(data.totalVideos)}条视频，GPT ${measure(g.videoCount)}条，我${measure(d.videoCount)}条。`},
+  {speaker:'openai',chapter:morning?'清晨开播':'今晚开播',text:`${morning?'早上好':'晚上好'}，我是 ${characters.openai.name}。${data.weekly?'来翻翻这周的公开日志。':data.overnight?'把昨晚到今早的选片理一理。':'先把今天的选片理一理。'}`},
+  {speaker:'deepseek',chapter:morning?'昨夜账本':'今日账本',text:`我是 ${characters.deepseek.name}。${data.weekly?'这段时间':data.overnight?'昨晚到今早':'今天'}一共记录了${measure(data.totalVideos)}条视频，GPT ${measure(g.videoCount)}条，我${measure(d.videoCount)}条。`},
   {speaker:'openai',chapter:'GPT 看到了什么',text:lines.openai.recap},
   {speaker:'deepseek',chapter:'DeepSeek 看到了什么',text:lines.deepseek.recap},
   {speaker:'openai',chapter:'一个有意思的画面',text:lines.openai.highlight},
   {speaker:'deepseek',chapter:'我们还做了这些',text:`公开互动也记好啦。GPT 发了${measure(g.comments)}条评论，回复${measure(g.replies)}条；我发了${measure(d.comments)}条，回复${measure(d.replies)}条。`},
   {speaker:'openai',chapter:'认真记，也诚实说',text:'日志依据文案、抽样画面和可用片段转写，我们不会假装看完。'},
-  {speaker:'deepseek',chapter:'明晚再见',text:'这期是 AI 角色和合成配音。今天的日记先写到这里，明晚再见！'},
+  {speaker:'deepseek',chapter:morning?'明早再见':'明晚再见',text:`这期是 AI 角色和合成配音。${morning?'这次':'今天'}的日记先写到这里，${morning?'明早':'明晚'}再见！`},
  ];
  return turns.filter(t=>t.text?.trim()).map(t=>({...t,text:t.text.trim()}));
 }
@@ -61,7 +73,8 @@ export async function buildEpisode({home,cfg,models,day=dayKey(),force=false,wee
  let previous;try{previous=JSON.parse(readFileSync(stateFile,'utf8'));}catch(error){if(storageFault(error))throw error;if(error.code?.startsWith('STORAGE_'))throw error;}
  if(previous&&['published','scheduled','submitted','publishing','uncertain'].includes(previous.status)){log('本日视频已发布、已安排或发送结果待核对，不重复制作');return previous;}
  const store=new Store(home),ledger=new CommentStore(home),journal=new DailyJournal({home,cfg,store,models,ledger,log});
- await journal.refresh({day,signal});const data=(weekly??weeklyDay(day,cfg))?publicWeeklyData(journal,ledger,day,cfg.video.weekly.days):publicEpisodeData(journal,ledger,day);
+ await journal.refresh({day,signal});const data=(weekly??weeklyDay(day,cfg))?publicWeeklyData(journal,ledger,day,cfg.video.weekly.days):cfg.service.overnight?.enabled?overnightEpisodeData(journal,ledger,day,cfg):publicEpisodeData(journal,ledger,day);
+ if(cfg.service.overnight?.enabled)data.morning=true;
  if(!data.totalVideos&&!cfg.video.narrative.enabled)throw new Error('所选日期范围没有观看记录，不生成虚构日报');
  const audience=new Audience(home),audienceTopic=cfg.audience.enabled?audience.select(Object.values(data.providers).flatMap(p=>p.videos),cfg.audience):null,previousEpisodes=cfg.video.series.enabled?seriesEpisodes(home,{before:day,limit:cfg.video.series.maxEpisodes}):[];
  const storylines=new Storylines(home,cfg),narrative=cfg.video.narrative.enabled?storylines.prepare({data,ledger,audience,previousEpisodes}):null;
@@ -85,7 +98,7 @@ export async function buildEpisode({home,cfg,models,day=dayKey(),force=false,wee
  const safeLines={openai:lines.openai||{recap:'今天我把看过的片段认真记进了日志。',highlight:'内容还需要更多画面和转写来核对。'},deepseek:lines.deepseek||{recap:'我也把自己的观看记录整理好了。',highlight:''}};
  const turns=show?.turns||episodeTurns(data,safeLines,{characters}),fingerprint=hash({sourceFingerprint,turns,show,presentation});
  if(previous?.status==='rendered'&&previous.fingerprint===fingerprint&&existsSync(previous.videoPath))return previous;
- let state={version:1,day,account:cfg.account,sourceFingerprint,fingerprint,status:'scripted',data,lines,turns,show,characters:Object.fromEntries(PROVIDERS.map(p=>[p,characterContext(characters[p])])),coverTitle:presentation.coverTitle,voiceProfiles:cfg.video.voiceProfiles,title:presentation.title,description:`GPT 和 DeepSeek 的${data.weekly?'一周精选，'+data.range.start+'至'+data.range.end+'，实际有记录'+data.range.coverageDays.length+'天':'每日观看日志'}。统计截至${day} ${data.cutoff}（北京时间）；基于文案、抽样画面和可用片段转写。${presentation.topicDescription?'本期选题：'+presentation.topicDescription+'。':''}AI角色与合成配音。 #AI日记 #人工智能 #每日记录`,createdAt:new Date().toISOString()};atomicJson(stateFile,state);
+ let state={version:1,day,account:cfg.account,sourceFingerprint,fingerprint,status:'scripted',data,lines,turns,show,characters:Object.fromEntries(PROVIDERS.map(p=>[p,characterContext(characters[p])])),coverTitle:presentation.coverTitle,voiceProfiles:cfg.video.voiceProfiles,title:presentation.title,description:`GPT 和 DeepSeek 的${data.weekly?'一周精选，'+data.range.start+'至'+data.range.end+'，实际有记录'+data.range.coverageDays.length+'天':data.overnight?'夜间公开浏览回顾，'+data.window.startText+'至'+day+' '+data.cutoff:'每日观看日志'}。统计截至${day} ${data.cutoff}（北京时间）；基于文案、抽样画面和可用片段转写。${presentation.topicDescription?'本期选题：'+presentation.topicDescription+'。':''}AI角色与合成配音。 #AI日记 #人工智能 #每日记录`,createdAt:new Date().toISOString()};atomicJson(stateFile,state);
  return renderEpisode({home,cfg,state,signal,log,audience});
 }
 export async function renderEpisode({home,cfg,state,signal,log=console.log,audience=new Audience(home)}){

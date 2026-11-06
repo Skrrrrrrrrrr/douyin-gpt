@@ -20,16 +20,16 @@ export async function makeShow(data,models,{format='roundtable',audienceTopic=nu
  const b=await request('deepseek','回答龙娘的具体问题，接梗并反问一句；有自己的选片时讲自己的真实细节，没有则回应她分享的记录。');
  const c=await request('openai','回答反问，给一个轻松的观察或可爱的脑洞，不再提新问题，question为空。');
  const d=await request('deepseek','接住上一句，用一句简短有趣的话收尾，question为空。');
- const g=data.providers.openai,s=data.providers.deepseek;
+ const g=data.providers.openai,s=data.providers.deepseek,morning=data.morning||data.overnight;
  const turns=[
-  {speaker:'openai',chapter:'双 AI 晚间闲聊',text:data.weekly?`晚上好，我是 ${characters.openai.name}。这周实际有${data.range.coverageDays.length}天记录，挑个画面聊聊。`:`晚上好，我是 ${characters.openai.name}。把今天的选片拿出来聊聊。`},
-  {speaker:'deepseek',chapter:'先报今日账本',text:`${data.weekly?'这段时间':'今天'}我们记录了 ${data.totalVideos} 条视频，GPT ${g.videoCount} 条，我 ${s.videoCount} 条。`},
+  {speaker:'openai',chapter:morning?'双 AI 晨间闲聊':'双 AI 晚间闲聊',text:data.weekly?`${morning?'早上好':'晚上好'}，我是 ${characters.openai.name}。这周实际有${data.range.coverageDays.length}天记录，挑个画面聊聊。`:`${morning?'早上好':'晚上好'}，我是 ${characters.openai.name}。把${data.overnight?'昨晚到今早':'今天'}的选片拿出来聊聊。`},
+  {speaker:'deepseek',chapter:'先报今日账本',text:`${data.weekly?'这段时间':data.overnight?'昨晚到今早':'今天'}我们记录了 ${data.totalVideos} 条视频，GPT ${g.videoCount} 条，我 ${s.videoCount} 条。`},
   {speaker:'openai',chapter:'GPT 抛出一个问题',text:a.say+a.question},
   {speaker:'deepseek',chapter:'DeepSeek 接个梗',text:b.say+b.question},
   {speaker:'openai',chapter:'轮到 GPT 回答',text:c.say},
   {speaker:'deepseek',chapter:'搭子的小脑洞',text:d.say},
   {speaker:'openai',chapter:data.weekly?'这一周的公开互动':'今天还有这些互动',text:`公开评论发了 ${g.comments+s.comments} 条，回复了 ${g.replies+s.replies} 条。日志依据文案、抽样画面和可用的片段转写。`},
-  {speaker:'deepseek',chapter:'明晚再聊',text:'日记收好啦。本期是 AI 角色与合成配音，明晚再聊！'},
+  {speaker:'deepseek',chapter:morning?'明早再聊':'明晚再聊',text:`日记收好啦。本期是 AI 角色与合成配音，${morning?'明早':'明晚'}再聊！`},
  ];
  return {format,topicId:topic.id,topicSummary:topic.analysis?.summary||topic.desc,topicKind:plan.kind,selectedTopics:plan.selected.map(item=>({videoId:item.video.id,provider:item.video.provider,matchedTopics:item.matchedTopics,rating:item.rating,basis:item.basis})),audienceTopic:audienceTopic?{id:audienceTopic.id,text:audienceTopic.text,url:audienceTopic.url}:null,previousDays:previousEpisodes.map(e=>e.day),turns,dialogue:log};
 }

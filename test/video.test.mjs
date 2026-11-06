@@ -50,6 +50,8 @@ test('已定时、已提交或发布结果不明的日记录不能再次点击�
  const p=new Publisher(home,cfg,{page:async()=>{throw new Error('不应访问浏览器');}},{log:()=>{}});
  for(const status of ['scheduled','published','submitted']){writeFileSync(join(dir,'episode.json'),JSON.stringify({day:'2026-10-29',status,account:cfg.account}));assert.equal((await p.publish('2026-10-29',{live:true})).status,status);}
  for(const status of ['publishing','uncertain']){writeFileSync(join(dir,'episode.json'),JSON.stringify({day:'2026-10-29',status,account:cfg.account}));await assert.rejects(p.publish('2026-10-29',{live:true}),/不自动重发/);}
+ for(const status of ['uploading','prepared']){writeFileSync(join(dir,'episode.json'),JSON.stringify({day:'2026-10-29',status,account:cfg.account}));await assert.rejects(p.publish('2026-10-29',{live:true}),/不自动重新上传或发布/);}
+ for(const uploadFingerprint of ['', 'different']){writeFileSync(join(dir,'episode.json'),JSON.stringify({day:'2026-10-29',status:'uploading',fingerprint:'current',uploadFingerprint,account:cfg.account}));await assert.rejects(p.publish('2026-10-29',{live:true,reuseUpload:true}),/指纹/);}
 });
 test('Realtime 配音收到完整音频及转写后才保存，不接受不一致内容',async t=>{
  const dir=mkdtempSync(join(tmpdir(),'dy-speech-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));

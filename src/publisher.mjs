@@ -10,6 +10,9 @@ import {journalDay} from './journal.mjs';
 import {Douyin} from './douyin.mjs';
 import {sleep} from './browser.mjs';
 
+export function isVideoPublishUrl(value){
+ try{const url=new URL(value);return url.origin==='https://creator.douyin.com'&&!url.username&&!url.password&&['/creator-micro/content/post/video','/creator-micro/content/publish'].includes(url.pathname);}catch{return false;}
+}
 export function publisherSnapshotInPage(){
  const visible=e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&getComputedStyle(e).visibility!=='hidden'&&getComputedStyle(e).display!=='none';};
  const normalize=t=>String(t||'').replace(/[\u200b\ufeff]/g,'').trim();
@@ -19,7 +22,7 @@ export function publisherSnapshotInPage(){
  const checks=[...document.querySelectorAll('label')].filter(visible).map(e=>({label:normalize(e.innerText),checked:!!e.querySelector('input:checked')}));
  const declaration=[...document.querySelectorAll('section')].find(e=>[...e.querySelectorAll('div')].some(n=>n.innerText.trim()==='自主声明'));
  const aiDeclared=!!declaration?.querySelector('[class*=selected]')&&declaration.querySelector('[class*=selectText]')?.innerText.trim()==='内容由AI生成';
- return {url:location.href,formReady,requiresUser:/验证码中间页|安全验证/.test(document.title),titleCandidates:titles.length,descriptionCandidates:editors.length,title:title?.value||'',description:normalize(editor?.innerText),aiDeclared,text:document.body.innerText.slice(0,20000),checks,scheduled:document.querySelector('input[placeholder="日期和时间"]')?.value||'',publishEnabled:[...document.querySelectorAll('button')].some(e=>visible(e)&&e.innerText.trim()==='发布'&&!e.disabled),links:[...document.querySelectorAll('a[href]')].map(e=>({text:normalize(e.innerText),href:e.href}))};
+ return {url:location.href,formReady,requiresUser:/验证码中间页|安全验证/.test(document.title),titleCandidates:titles.length,descriptionCandidates:editors.length,title:title?.value||'',description:normalize(editor?.innerText),aiDeclared,text:document.body?.innerText.slice(0,20000)||'',checks,scheduled:document.querySelector('input[placeholder="日期和时间"]')?.value||'',publishEnabled:[...document.querySelectorAll('button')].some(e=>visible(e)&&e.innerText.trim()==='发布'&&!e.disabled),links:[...document.querySelectorAll('a[href]')].map(e=>({text:normalize(e.innerText),href:e.href}))};
 }
 export function publisherControlInPage({text,selector}){
  const visible=e=>{const r=e.getBoundingClientRect();return r.width>0&&r.height>0&&getComputedStyle(e).display!=='none'&&getComputedStyle(e).visibility!=='hidden';};
@@ -30,7 +33,7 @@ export function publisherControlInPage({text,selector}){
 }
 const ev=(page,fn,arg)=>page.ev(`(${fn.toString()})(${arg===undefined?'':JSON.stringify(arg)})`);
 export function validatePublishForm(snapshot,state,at){
- if(new URL(snapshot.url).origin!=='https://creator.douyin.com')throw new Error('不在抖音创作者中心');
+ if(!isVideoPublishUrl(snapshot.url))throw new Error('不在抖音创作者中心的视频发布页面');
  if(snapshot.formReady===false)throw new Error('发布表单尚未就绪或控件不唯一，未提交');
  if(snapshot.title!==state.title||snapshot.description!==state.description)throw new Error('发布前标题或描述发生变化，保留稿件');
  if(!snapshot.aiDeclared&&!/作者声明[:：]\s*内容由AI生成/.test(snapshot.text))throw new Error('未核对 AI 内容声明');
@@ -52,20 +55,20 @@ export function publishReceipt(json){
  return {accepted:code===0,id:id||'',code:typeof code==='number'?code:null};
 }
 export class Publisher{
- constructor(home,cfg,browser,{log=console.log,wait=sleep,formTimeoutMs=30000,formPollMs=250}={}){Object.assign(this,{home,cfg,browser,log,wait,formTimeoutMs,formPollMs});this.dy=new Douyin(home,browser);}
+ constructor(home,cfg,browser,{log=console.log,wait=sleep,formTimeoutMs=30000,formPollMs=250,uploadTimeoutMs=60000}={}){Object.assign(this,{home,cfg,browser,log,wait,formTimeoutMs,formPollMs,uploadTimeoutMs});this.dy=new Douyin(home,browser);}
  file(day){return join(this.home,'video',journalDay(day),'episode.json');}
  read(day){const state=JSON.parse(readFileSync(this.file(day),'utf8'));if(state.account?.secUid!==this.cfg.account.secUid)throw new Error('视频记录绑定的账号不一致');return state;}
  save(state){atomicJson(this.file(state.day),state);}
  async attach(){if(!this.page){this.page=await this.browser.page('publisher','https://creator.douyin.com/creator-micro/content/upload');await this.page.send('Network.enable');this.receipts=[];this.requests=new Map();this.page.on('Network.requestWillBeSent',e=>{const u=new URL(e.request.url);if(this.armedAt&&Date.now()>=this.armedAt&&e.request.method==='POST'&&['https://creator.douyin.com','https://www.douyin.com'].includes(u.origin)&&/aweme\/(?:create|publish)|content\/publish/.test(u.pathname))this.requests.set(e.requestId,{at:Date.now(),path:u.pathname});});this.page.on('Network.loadingFinished',async e=>{const r=this.requests.get(e.requestId);if(!r)return;this.requests.delete(e.requestId);try{const body=await this.page.send('Network.getResponseBody',{requestId:e.requestId});const value=JSON.parse(body.base64Encoded?Buffer.from(body.body,'base64').toString():body.body);this.receipts.push({...publishReceipt(value),at:r.at,path:r.path});}catch{}});}return this.page;}
  async snapshot(){return ev(await this.attach(),publisherSnapshotInPage);}
- async waitForForm(){
-  const {formTimeoutMs:timeout,formPollMs:interval}=this;
+ async waitForForm({timeoutMs:timeout=this.formTimeoutMs}={}){
+  const {formPollMs:interval}=this;
   if(!Number.isSafeInteger(timeout)||timeout<=0||timeout>60000||!Number.isSafeInteger(interval)||interval<=0)throw new Error('发布表单等待配置无效');
   const deadline=Date.now()+timeout,checks=Math.ceil(timeout/interval);
   for(let i=0;i<checks;i++){
    const view=await this.snapshot();
    if(view.requiresUser)throw Object.assign(new Error('发布页面需要本人完成抖音验证，未填写或提交'),{code:'PLATFORM_VERIFICATION'});
-   if(new URL(view.url).origin==='https://creator.douyin.com'&&new URL(view.url).pathname==='/creator-micro/content/post/video'&&view.formReady)return view;
+   if(isVideoPublishUrl(view.url)&&view.formReady)return view;
    const remaining=deadline-Date.now();if(remaining<=0||i===checks-1)break;
    await this.wait(Math.min(interval,remaining));
   }
@@ -84,15 +87,17 @@ export class Publisher{
  async prepare(state,{at,reuseUpload=false}={}){
   await this.dy.checkAccount(this.cfg.account);const page=await this.attach();let current=await this.snapshot();
   if(at)scheduledDate(at);
-  if(current.url.includes('/content/post/video'))current=await this.waitForForm();
-  if(!reuseUpload&&current.url.includes('/content/post/video')&&(current.title||current.description))throw new Error('存在未提交的视频稿件，需先核对；本程序不会覆盖');
+  if(isVideoPublishUrl(current.url))current=await this.waitForForm();
+  if(!reuseUpload&&isVideoPublishUrl(current.url)&&(current.title||current.description))throw new Error('存在未提交的视频稿件，需先核对；本程序不会覆盖');
   if(!reuseUpload){
    await this.browser.navigate(page,'https://creator.douyin.com/creator-micro/content/upload');
    for(let i=0;i<30;i++){const ready=await page.ev(`!!document.querySelector('input[type=file]')`);if(ready)break;await sleep(500);if(i===29)throw new Error('创作者中心需要登录或页面没有上传控件');}
    state.status='uploading';state.uploadFingerprint=state.fingerprint;state.uploadStartedAt=new Date().toISOString();this.save(state);
    const {root}=await page.send('DOM.getDocument'),{nodeId}=await page.send('DOM.querySelector',{nodeId:root.nodeId,selector:'input[type=file]'});
    await page.send('DOM.setFileInputFiles',{nodeId,files:[state.videoPath]});
-   for(let i=0;i<120;i++){if((await this.snapshot()).url.includes('/content/post/video'))break;await sleep(500);if(i===119)throw new Error('上传后未进入视频发布页面');}
+   // Creator redirects uploads to either the legacy or the new publishing
+   // route. A URL alone is insufficient: both need the same unique fields.
+   await this.waitForForm({timeoutMs:this.uploadTimeoutMs});
   }else if(current.title&&current.title!==state.title)throw new Error('待复用的上传稿件标题不匹配');
   // A route change precedes the creator page's React fields. Wait for unique,
   // editable controls before typing; the upload-complete and send guards follow.
@@ -116,6 +121,8 @@ export class Publisher{
   let state=this.read(day);
   if(['published','scheduled','submitted'].includes(state.status)){this.log('本日已有已发布或定时视频，不重复发送');return state;}
   if(['publishing','uncertain'].includes(state.status))throw new Error('本日发布结果待核对，不自动重发');
+  if(['uploading','prepared'].includes(state.status)&&!reuseUpload)throw new Error('本日已有上传稿件，需先核对并明确复用，不自动重新上传或发布');
+  if(reuseUpload&&(!state.uploadFingerprint||state.uploadFingerprint!==state.fingerprint))throw new Error('上传稿件指纹与当前成片不匹配，未复用或发布');
   if(!['rendered','prepared','uploading'].includes(state.status)||!existsSync(state.videoPath))throw new Error('没有已完成的视频可以发布');
   const approved=this.cfg.review?.videos==='review'?approvedEpisode(this.home,state):null;if(this.cfg.review?.videos==='review'&&!approved)throw new Error('当前成片尚未批准，保留待审稿');
   await this.prepare(state,{at,reuseUpload});await this.dy.checkAccount(this.cfg.account);

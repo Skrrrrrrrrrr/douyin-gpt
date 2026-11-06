@@ -1,6 +1,6 @@
 {
   "name": "douyin-gpt",
-  "version": "0.12.1",
+  "version": "0.13.0",
   "private": true,
   "type": "module",
   "description": "双 AI 抖音节目：单集公开主线、跨期回访、真实成长与双人问答",

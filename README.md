@@ -8,7 +8,9 @@ GPT 龙娘与 DeepSeek 大肥鱼的双 AI 日常工作台。名称取自人物�
 
 Mac重启后可双击 [启动抖音助手.command](启动抖音助手.command)，自动检查并恢复原运行环境；重复点击复用已有进程，保留人工暂停。命令行与只读检查见 [一键启动说明](START-LOCAL.md)。
 
-这是 0.12.0 本机控制台与命令行版本。Node.js 22 及以上，机器已有 Chrome 或 Edge 即可；使用 Node.js 依赖 `ws` 和数据库驱动 `pg`；基础浏览和聊天不需要 DSH、Windows OCR 或下载 Chromium。视频功能另需 Python、Pillow 和 FFmpeg。两个服务均使用各自的 Responses API；默认模型为 `gpt-6-luna` 和支持图像输入的 `deepseek-flash`。
+可启用夜间运行模式：每天北京时间20:00由原守护自动恢复数据库、管理页和专用浏览器并刷取，次日07:30准备当夜公开浏览与互动的作品，08:00暂停刷取并发布。确认已发布且取得作品ID与发布时间后，停止助手、专用浏览器和管理页；数据库与轻量守护保持待机，供下一晚唤醒。遇到验证码、待审或发布结果不明时保留管理入口和原稿，不自动重发。配置与状态见 [夜间计划](START-LOCAL.md#夜间计划)。
+
+这是 0.13.0 本机控制台与命令行版本。Node.js 22 及以上，机器已有 Chrome 或 Edge 即可；使用 Node.js 依赖 `ws` 和数据库驱动 `pg`；基础浏览和聊天不需要 DSH、Windows OCR 或下载 Chromium。视频功能另需 Python、Pillow 和 FFmpeg。两个服务均使用各自的 Responses API；默认模型为 `gpt-6-luna` 和支持图像输入的 `deepseek-flash`。
 
 ## 当前实现
 

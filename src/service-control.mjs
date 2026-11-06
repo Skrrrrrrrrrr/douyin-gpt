@@ -1,5 +1,5 @@
 import {existsSync,readFileSync,writeFileSync,mkdirSync,renameSync} from 'node:fs';
-import {join} from 'node:path';
+import {join,dirname,isAbsolute} from 'node:path';
 import {homedir} from 'node:os';
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
@@ -17,7 +17,12 @@ export async function bootstrapWithRetry(bootstrap,{loaded,wait=ms=>new Promise(
  let failure;for(let i=0;i<4;i++){try{await bootstrap();return;}catch(error){failure=error;if(await loaded())return;if(i<3)await wait(500*2**i);}}
  throw failure;
 }
-export function servicePlist(home,node=process.execPath){const label=serviceIdentity(home);return `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>Label</key><string>${label}</string><key>ProgramArguments</key><array><string>${xml(node)}</string><string>${xml(join(ROOT,'scripts/supervisor.mjs'))}</string><string>run</string></array><key>WorkingDirectory</key><string>${xml(ROOT)}</string><key>EnvironmentVariables</key><dict><key>DOUYIN_GPT_HOME</key><string>${xml(home)}</string></dict><key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>30</integer><key>StandardOutPath</key><string>${xml(join(home,'supervisor.log'))}</string><key>StandardErrorPath</key><string>${xml(join(home,'supervisor.log'))}</string></dict></plist>`;}
+// launchd does not inherit the user's interactive shell PATH. Include both
+// Homebrew layouts and Docker Desktop's bundled CLI for every spawned child.
+export function servicePath(node=process.execPath){
+ return [...new Set([dirname(node),'/opt/homebrew/bin','/opt/homebrew/sbin','/usr/local/bin','/usr/local/sbin',join(homedir(),'.local','bin'),'/Applications/Docker.app/Contents/Resources/bin','/usr/bin','/bin','/usr/sbin','/sbin'])].filter(path=>isAbsolute(path)&&!path.includes(':')).join(':');
+}
+export function servicePlist(home,node=process.execPath){const label=serviceIdentity(home);return `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>Label</key><string>${label}</string><key>ProgramArguments</key><array><string>${xml(node)}</string><string>${xml(join(ROOT,'scripts/supervisor.mjs'))}</string><string>run</string></array><key>WorkingDirectory</key><string>${xml(ROOT)}</string><key>EnvironmentVariables</key><dict><key>PATH</key><string>${xml(servicePath(node))}</string><key>DOUYIN_GPT_HOME</key><string>${xml(home)}</string></dict><key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ThrottleInterval</key><integer>30</integer><key>StandardOutPath</key><string>${xml(join(home,'supervisor.log'))}</string><key>StandardErrorPath</key><string>${xml(join(home,'supervisor.log'))}</string></dict></plist>`;}
 export async function serviceStatus(home){const label=serviceIdentity(home),file=join(homedir(),'Library','LaunchAgents',label+'.plist');let loaded=false;try{await exec('/bin/launchctl',['print',`gui/${process.getuid()}/${label}`],{timeout:5000});loaded=true;}catch{}return {label,installed:existsSync(file),loaded,desired:serviceDesired(home)};}
 export async function installService(home){if(process.platform!=='darwin')throw new Error('登录启动当前支持 macOS');const label=serviceIdentity(home),dir=join(homedir(),'Library','LaunchAgents'),file=join(dir,label+'.plist');mkdirSync(dir,{recursive:true});if(existsSync(file)&&!readFileSync(file,'utf8').includes(xml(join(ROOT,'scripts/supervisor.mjs'))))throw new Error('同名启动项不属于当前项目，未覆盖');if(existsSync(file))try{await exec('/bin/launchctl',['bootout',`gui/${process.getuid()}/${label}`],{timeout:5000});}catch{}
  for(let i=0;i<20&&(await serviceStatus(home)).loaded;i++)await new Promise(r=>setTimeout(r,250));

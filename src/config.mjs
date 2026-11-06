@@ -41,6 +41,7 @@ export function providerEngagement(cfg, provider = 'openai') {
 export function validateConfig(cfg) {
   const defaults = defaultConfig();
   for(const section of ['understanding','memory','monitor','dashboard','audience','analytics','discovery','budget','review','service','backup','official','tokenEfficiency','videoAnalysis'])cfg[section]={...defaults[section],...(cfg[section]||{})};
+  cfg.service.overnight={...defaults.service.overnight,...cfg.service.overnight};
   cfg.video = { ...defaults.video, ...(cfg.video || {}), voices: { ...defaults.video.voices, ...(cfg.video?.voices || {}) }, voiceProfiles: { ...(cfg.video?.voiceProfiles || {}) } };
   cfg.video.show={enabled:false,format:'roundtable',...(cfg.video.show||{})};
   cfg.video.animation=cfg.video.animation??false;
@@ -150,6 +151,9 @@ export function validateConfig(cfg) {
   for(const [o,k]of [[cfg.reply.delivery,'enabled'],[cfg.reply.delivery,'textWithSticker'],[cfg.reply.collaboration,'enabled'],[cfg.reply.voiceCards,'enabled'],[cfg.reply.voiceCards,'reviewBeforeSend'],[cfg.video.weekly,'enabled'],[cfg.service,'enabled'],[cfg.backup,'enabled'],[cfg.official,'enabled']])if(typeof o[k]!=='boolean')throw new Error('增强功能开关必须为布尔值');
   for(const key of ['private','comments','videos'])if(!['auto','review'].includes(cfg.review[key]))throw new Error('审核模式无效');
   for(const [o,k,min,max]of [[cfg.reply.delivery,'continueMinutes',1,60],[cfg.reply.voiceCards,'maxChars',10,120],[cfg.reply.voiceCards,'maxSeconds',5,30],[cfg.video.weekly,'weekday',0,6],[cfg.video.weekly,'days',2,7],[cfg.service,'pollSeconds',10,300],[cfg.service,'prepHour',0,23],[cfg.service,'prepMinute',0,59],[cfg.service,'lateGraceMinutes',0,120],[cfg.backup,'keep',1,30]])positive(o[k],k,min,max);
+  if(typeof cfg.service.overnight.enabled!=='boolean')throw new Error('夜间运行开关必须为布尔值');
+  positive(cfg.service.overnight.startHour,'overnight.startHour',0,23);positive(cfg.service.overnight.startMinute,'overnight.startMinute',0,59);
+  if(cfg.service.overnight.enabled&&(cfg.service.overnight.startHour*60+cfg.service.overnight.startMinute<=cfg.video.hour*60+cfg.video.minute||cfg.service.prepHour*60+cfg.service.prepMinute>=cfg.video.hour*60+cfg.video.minute))throw new Error('夜间运行需要跨日，晨间准备时间必须早于发布时间');
   return cfg;
 }
 export function readConfig(home) {

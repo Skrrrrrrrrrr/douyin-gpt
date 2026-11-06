@@ -73,6 +73,22 @@ export function backgroundBrowserLaunch(home, port, binary) {
     'https://www.douyin.com/user/self'];
 }
 
+export async function restoreStartupWindow(browser,{wait=sleep}={}){
+  if(browser.runtime?.profile!==join(browser.home,'browser'))throw failure('BROWSER_PROFILE_MISMATCH','浏览器运行资料与原专用目录不一致，未恢复窗口。');
+  if(browser.headless)return {restored:false};
+  const targets=await browser.cdp.send('Target.getTargets');
+  if(targets.targetInfos.some(target=>target.type==='page'))return {restored:false};
+  const {targetId}=await browser.cdp.send('Target.createTarget',{url:'https://www.douyin.com/user/self',newWindow:true,background:browser.background});
+  for(let i=0;i<30;i++){
+    const current=await browser.cdp.send('Target.getTargets');
+    if(current.targetInfos.some(target=>target.type==='page'&&target.targetId===targetId&&target.url?.startsWith('https://www.douyin.com/'))){
+      await browser.attachExistingPage('account',targetId);return {restored:true,targetId};
+    }
+    await wait(100);
+  }
+  throw failure('BROWSER_WINDOW_FAILED','原专用窗口尚未恢复，未启动执行进程。');
+}
+
 async function ensureBrowser(home, cfg, log) {
   const profile = join(home, 'browser');
   let owned = ownedBrowserProcess(profile);
@@ -81,7 +97,8 @@ async function ensureBrowser(home, cfg, log) {
     if (!binary) throw failure('BROWSER_MISSING', '未找到 Chrome / Edge，请先安装原专用浏览器。');
     const port = await freePort();
     log('正在后台打开原专用浏览器，保留普通窗口与原登录资料…');
-    // Explicit one-click launch only. Ordinary recovery still cannot reopen a closed window.
+    // Explicit one-click or user-scheduled nightly start may reopen the window.
+    // Ordinary watchdog recovery still cannot reopen a manually closed window.
     await exec('/usr/bin/open', backgroundBrowserLaunch(home, port, binary), {timeout: 10000});
     for (let i = 0; i < 60; i++) {
       owned = ownedBrowserProcess(profile);
@@ -91,7 +108,11 @@ async function ensureBrowser(home, cfg, log) {
     if (!owned || !await probe(owned.port)) throw failure('BROWSER_START_FAILED', '专用浏览器未能连接，请检查窗口或浏览器日志后重试。');
   }
   const browser = new Browser(home, cfg.browser);
-  try { await browser.start(); } finally { browser.disconnect(); }
+  try {
+    await browser.start();
+    const window=await restoreStartupWindow(browser);
+    if(window.restored)log('原浏览器进程仍在，已在后台恢复专用窗口。');
+  } finally { browser.disconnect(); }
 }
 
 function realDependencies(home, cfg, log) {

@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync, rmSync, writeFileSync, readFileSync} from 'node:fs';
+import {mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
-import {startLocal, startupStoragePlan, backgroundBrowserLaunch} from '../scripts/start-local.mjs';
+import {startLocal, startupStoragePlan, backgroundBrowserLaunch,restoreStartupWindow} from '../scripts/start-local.mjs';
+import {servicePlist} from '../src/service-control.mjs';
+import {execFileSync} from 'node:child_process';
 
 function fixture() {
   const ops = [], desired = {worker: true, dashboard: true, maintenanceUntil: 0};
@@ -28,6 +30,35 @@ function fixture() {
   };
   return {deps, desired, ops, run: options => startLocal({home: '/unused', cfg: {}, log: () => {}, deps, ...options})};
 }
+
+test('启动代理不依赖交互shell：导出的PATH让子进程找到带空格路径下的工具',t=>{
+ const folder=mkdtempSync(join(tmpdir(),'dy-launch-path-'));t.after(()=>rmSync(folder,{recursive:true,force:true}));
+ const bin=join(folder,'node & tools','bin');mkdirSync(bin,{recursive:true});writeFileSync(join(bin,'night-path-check'),'#!/bin/sh\nprintf "path-ok"\n',{mode:0o700});
+ const plist=servicePlist('/fixture/home',join(bin,'node'));
+ const encoded=plist.match(/<key>PATH<\/key><string>([^<]+)<\/string>/)?.[1];assert.ok(encoded);
+ const path=encoded.replaceAll('&amp;','&').replaceAll('&quot;','"').replaceAll('&apos;',"'").replaceAll('&lt;','<').replaceAll('&gt;','>');
+ const code="const {execFileSync}=require('node:child_process');process.stdout.write(execFileSync('night-path-check',[],{encoding:'utf8'}));";
+ assert.equal(execFileSync(process.execPath,['-e',code],{env:{PATH:path},encoding:'utf8'}),'path-ok');
+ assert.ok(path.split(':').includes('/usr/local/bin'));assert.ok(path.split(':').includes('/opt/homebrew/bin'));assert.ok(path.split(':').includes('/Applications/Docker.app/Contents/Resources/bin'));
+});
+
+function windowFixture({pages=[],profile='/fixture/browser'}={}){
+ const calls=[];let created=false;
+ const browser={home:'/fixture',headless:false,background:true,runtime:{profile},cdp:{send:async(method,args)=>{calls.push({method,args});if(method==='Target.getTargets')return {targetInfos:created?[{type:'page',targetId:'restored',url:'https://www.douyin.com/user/self'}]:pages};if(method==='Target.createTarget'){created=true;return {targetId:'restored'};}throw new Error('unexpected command');}},attachExistingPage:async(kind,id)=>calls.push({method:'attach',kind,id})};return {browser,calls};
+}
+test('专用进程存活但全部窗口关闭时，显式启动在原进程后台恢复一个窗口',async()=>{
+ const h=windowFixture();assert.equal((await restoreStartupWindow(h.browser,{wait:async()=>{}})).restored,true);
+ const create=h.calls.find(c=>c.method==='Target.createTarget');assert.deepEqual(create.args,{url:'https://www.douyin.com/user/self',newWindow:true,background:true});assert.deepEqual(h.calls.at(-1),{method:'attach',kind:'account',id:'restored'});assert.ok(!h.calls.some(c=>/activate|bringToFront|Browser.close/.test(c.method)));
+ await restoreStartupWindow(h.browser);assert.equal(h.calls.filter(c=>c.method==='Target.createTarget').length,1);
+});
+test('已有窗口或无界面模式不额外开窗口，资料目录不符时直接拒绝',async()=>{
+ const existing=windowFixture({pages:[{type:'page',targetId:'existing'}]});assert.equal((await restoreStartupWindow(existing.browser)).restored,false);assert.equal(existing.calls.some(c=>c.method==='Target.createTarget'),false);
+ const headless=windowFixture();headless.browser.headless=true;assert.equal((await restoreStartupWindow(headless.browser)).restored,false);assert.equal(headless.calls.length,0);
+ const wrong=windowFixture({profile:'/another/profile'});await assert.rejects(restoreStartupWindow(wrong.browser),e=>e.code==='BROWSER_PROFILE_MISMATCH');assert.equal(wrong.calls.length,0);
+});
+test('只创建了目标但抖音页面未出现时不声称窗口恢复，不提前绑定空白页',async()=>{
+ const h=windowFixture();h.browser.cdp.send=async method=>method==='Target.createTarget'?{targetId:'restored'}:{targetInfos:[]};await assert.rejects(restoreStartupWindow(h.browser,{wait:async()=>{}}),e=>e.code==='BROWSER_WINDOW_FAILED');assert.equal(h.calls.some(c=>c.method==='attach'),false);
+});
 
 test('重启后先验证原数据库和账号，再恢复服务；重复启动复用原执行进程', async () => {
   const h = fixture();

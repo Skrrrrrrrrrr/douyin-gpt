@@ -1,5 +1,6 @@
 import {dayKey} from './config.mjs';
 export function scheduleAction(cfg,state,{now=new Date(),approved=false}={}){
+ if(cfg.service.overnight?.enabled)return null;
  if(!cfg.service.enabled||!cfg.video.enabled)return null;const day=dayKey(now),minutes=Number(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Shanghai',hour:'2-digit',hour12:false}).format(now))*60+Number(new Intl.DateTimeFormat('en-GB',{timeZone:'Asia/Shanghai',minute:'2-digit'}).format(now)),due=cfg.video.hour*60+cfg.video.minute,prep=cfg.service.prepHour*60+cfg.service.prepMinute;
  if(state&&state.day!==day)return null;
  if(['published','scheduled','submitted','publishing','uncertain','prepared','uploading'].includes(state?.status))return null;
