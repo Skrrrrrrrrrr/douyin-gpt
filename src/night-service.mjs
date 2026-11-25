@@ -12,7 +12,8 @@ const accountHash=cfg=>createHash('sha256').update(cfg.account.secUid).digest('h
 export function nightWindow(cfg,now=new Date()){
  const today=dayKey(now),startToday=at(today,cfg.service.overnight.startHour,cfg.service.overnight.startMinute),startDay=now>=new Date(startToday)?today:shiftDay(today,-1),day=shiftDay(startDay,1);
  const startAt=at(startDay,cfg.service.overnight.startHour,cfg.service.overnight.startMinute),prepareAt=at(day,cfg.service.prepHour,cfg.service.prepMinute),publishAt=at(day,cfg.video.hour,cfg.video.minute);
- return {day,startAt,prepareAt,publishAt,nextStartAt:at(day,cfg.service.overnight.startHour,cfg.service.overnight.startMinute),browsing:now>=new Date(startAt)&&now<new Date(publishAt)};
+ const stopAt=at(day,cfg.service.overnight.stopHour??8,cfg.service.overnight.stopMinute??0);
+ return {day,startAt,prepareAt,publishAt,stopAt,nextStartAt:at(day,cfg.service.overnight.startHour,cfg.service.overnight.startMinute),browsing:now>=new Date(startAt)&&now<new Date(publishAt)};
 }
 export const nightState=home=>readState(home,'service-window.json',{version:1});
 
@@ -30,13 +31,29 @@ export class NightService{
   catch(error){state.task.status='failed';state.error=safeDeliveryNote(error.stderr||error.message);this.deps.alert('夜间作品任务需要处理',state.error);}
   state.task.finishedAt=new Date().toISOString();this.save(state);
  }
- async finish(state,episode){
-  state.published={day:episode.day,videoId:episode.platformVideoId||episode.review?.videoId,publishedAt:episode.publishedAt,confirmedAt:new Date().toISOString()};state.phase='stopping';this.save(state);
+ async finish(state,episode,cfg){
+  state.published={day:episode.day,videoId:episode.platformVideoId||episode.review?.videoId,publishedAt:episode.publishedAt,confirmedAt:new Date().toISOString()};
+  if(cfg.service.overnight.powerOffAtMorning){
+   state.phase='waiting_shutdown';this.save(state);this.deps.resolve();return state;
+  }
+  state.phase='stopping';this.save(state);
   await this.deps.stopServices();state.phase='stopped';state.stoppedAt=new Date().toISOString();delete state.error;this.save(state);this.deps.resolve();return state;
+ }
+ async powerOff(state){
+  if(state.poweredOffAt)return state;
+  state.phase='stopping';state.stopReason='morning_schedule';this.save(state);
+  await this.deps.stopServices({stopDocker:true});
+  state.phase='stopped';state.stoppedAt=new Date().toISOString();state.poweredOffAt=state.stoppedAt;
+  this.save(state);return state;
  }
  async tick(cfg,{now=new Date(),status={}}={}){
   if(!cfg.service.enabled||!cfg.service.overnight?.enabled)return {phase:'disabled'};
   const window=nightWindow(cfg,now);let state=this.read();
+  if(cfg.service.overnight.powerOffAtMorning&&now>=new Date(window.stopAt)){
+   if(state.day!==window.day)state={version:1,accountHash:accountHash(cfg),...window,jobs:{}};
+   state.stopAt=window.stopAt;state.browsing=false;
+   return this.powerOff(state);
+  }
   if(window.browsing&&state.day!==window.day){
    const history=[...(state.history||[]),...(state.day?[{day:state.day,phase:state.phase,stoppedAt:state.stoppedAt,published:state.published,error:state.error,task:state.task}]:[])].slice(-7);
    state={version:1,accountHash:accountHash(cfg),...window,phase:'starting',jobs:{},startAttempts:0,history};this.save(state);
@@ -66,12 +83,12 @@ export class NightService{
   let episode=await this.deps.readEpisode(window.day);
   if(episode&&(episode.day!==window.day||episode.account?.secUid!==cfg.account.secUid))throw new Error('晨间作品日期或绑定账号不一致，未继续操作');
   if(now>=new Date(window.publishAt)){
-   if(episode&&publishedWitness(episode,cfg.account))return this.finish(state,episode);
+   if(episode&&publishedWitness(episode,cfg.account))return this.finish(state,episode,cfg);
    if(['submitted','scheduled','published','publishing','uncertain'].includes(episode?.status)){
     if((state.reviewRetryAt||0)<=now.getTime()){
      state.reviewRetryAt=now.getTime()+60000;this.save(state);
      try{await this.deps.review(window.day);}catch(error){state.error=safeDeliveryNote(error.stderr||error.message);this.save(state);this.deps.alert('晨间作品仍待核对',state.error);return state;}
-     episode=await this.deps.readEpisode(window.day);if(episode&&publishedWitness(episode,cfg.account))return this.finish(state,episode);
+     episode=await this.deps.readEpisode(window.day);if(episode&&publishedWitness(episode,cfg.account))return this.finish(state,episode,cfg);
     }
     state.phase='waiting_publication';this.save(state);
     if(['published','publishing','uncertain'].includes(episode?.status))this.deps.alert('晨间作品结果需要核对','保留原发布记录，只做读取复核，不自动重发。');

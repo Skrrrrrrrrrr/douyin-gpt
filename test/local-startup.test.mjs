@@ -6,6 +6,7 @@ import {join} from 'node:path';
 import {createHash} from 'node:crypto';
 import {startLocal, startupStoragePlan, backgroundBrowserLaunch,restoreStartupWindow} from '../scripts/start-local.mjs';
 import {servicePlist} from '../src/service-control.mjs';
+import {defaultConfig} from '../src/config.mjs';
 import {execFileSync} from 'node:child_process';
 
 function fixture() {
@@ -46,6 +47,15 @@ function windowFixture({pages=[],profile='/fixture/browser'}={}){
  const calls=[];let created=false;
  const browser={home:'/fixture',headless:false,background:true,runtime:{profile},cdp:{send:async(method,args)=>{calls.push({method,args});if(method==='Target.getTargets')return {targetInfos:created?[{type:'page',targetId:'restored',url:'https://www.douyin.com/user/self'}]:pages};if(method==='Target.createTarget'){created=true;return {targetId:'restored'};}throw new Error('unexpected command');}},attachExistingPage:async(kind,id)=>calls.push({method:'attach',kind,id})};return {browser,calls};
 }
+test('完整晨间停机使用系统08点与20点日历，正常退出的Node守护不会被KeepAlive重启',()=>{
+ const cfg=defaultConfig();
+ Object.assign(cfg.service.overnight,{enabled:true,powerOffAtMorning:true,stopHour:8,stopMinute:0});
+ const plist=servicePlist('/fixture/home',process.execPath,cfg);
+ const parsed=JSON.parse(execFileSync('python3',['-c','import plistlib,json,sys;print(json.dumps(plistlib.loads(sys.stdin.buffer.read())))'],{input:plist,encoding:'utf8'}));
+ assert.deepEqual(parsed.KeepAlive,{SuccessfulExit:false});
+ assert.deepEqual(parsed.StartCalendarInterval,[{Hour:20,Minute:0},{Hour:8,Minute:0}]);
+ assert.equal(parsed.RunAtLoad,true);
+});
 test('专用进程存活但全部窗口关闭时，显式启动在原进程后台恢复一个窗口',async()=>{
  const h=windowFixture();assert.equal((await restoreStartupWindow(h.browser,{wait:async()=>{}})).restored,true);
  const create=h.calls.find(c=>c.method==='Target.createTarget');assert.deepEqual(create.args,{url:'https://www.douyin.com/user/self',newWindow:true,background:true});assert.deepEqual(h.calls.at(-1),{method:'attach',kind:'account',id:'restored'});assert.ok(!h.calls.some(c=>/activate|bringToFront|Browser.close/.test(c.method)));

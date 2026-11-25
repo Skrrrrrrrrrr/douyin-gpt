@@ -220,7 +220,7 @@
     "prepHour": 18,
     "prepMinute": 30,
     "lateGraceMinutes": 90,
-    "overnight": {"enabled": false, "startHour": 20, "startMinute": 0}
+    "overnight": {"enabled": false, "startHour": 20, "startMinute": 0, "powerOffAtMorning": false, "stopHour": 8, "stopMinute": 0}
   },
   "backup": {
     "enabled": false,

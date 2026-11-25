@@ -153,6 +153,15 @@ export function validateConfig(cfg) {
   for(const [o,k,min,max]of [[cfg.reply.delivery,'continueMinutes',1,60],[cfg.reply.voiceCards,'maxChars',10,120],[cfg.reply.voiceCards,'maxSeconds',5,30],[cfg.video.weekly,'weekday',0,6],[cfg.video.weekly,'days',2,7],[cfg.service,'pollSeconds',10,300],[cfg.service,'prepHour',0,23],[cfg.service,'prepMinute',0,59],[cfg.service,'lateGraceMinutes',0,120],[cfg.backup,'keep',1,30]])positive(o[k],k,min,max);
   if(typeof cfg.service.overnight.enabled!=='boolean')throw new Error('夜间运行开关必须为布尔值');
   positive(cfg.service.overnight.startHour,'overnight.startHour',0,23);positive(cfg.service.overnight.startMinute,'overnight.startMinute',0,59);
+  if(typeof cfg.service.overnight.powerOffAtMorning!=='boolean')throw new Error('晨间完整停机开关必须为布尔值');
+  positive(cfg.service.overnight.stopHour,'overnight.stopHour',0,23);
+  positive(cfg.service.overnight.stopMinute,'overnight.stopMinute',0,59);
+  if(cfg.service.overnight.enabled&&cfg.service.overnight.powerOffAtMorning){
+    const publication=cfg.video.hour*60+cfg.video.minute;
+    const shutdown=cfg.service.overnight.stopHour*60+cfg.service.overnight.stopMinute;
+    const startup=cfg.service.overnight.startHour*60+cfg.service.overnight.startMinute;
+    if(shutdown<=publication||shutdown>=startup)throw new Error('完整停机时间必须晚于晨间提交、早于晚间启动');
+  }
   if(cfg.service.overnight.enabled&&(cfg.service.overnight.startHour*60+cfg.service.overnight.startMinute<=cfg.video.hour*60+cfg.video.minute||cfg.service.prepHour*60+cfg.service.prepMinute>=cfg.video.hour*60+cfg.video.minute))throw new Error('夜间运行需要跨日，晨间准备时间必须早于发布时间');
   return cfg;
 }

@@ -28,6 +28,10 @@ npm run status:local
 
 ## 夜间计划
 
+若需要白天关闭Docker及全部项目Node服务，可启用`service.overnight.powerOffAtMorning=true`，设置`stopHour=8`、`stopMinute=0`，并将作品提交时间设为`video.hour=7`、`video.minute=50`。07:30准备，07:50暂停刷取并提交，08:00执行完整停机。已提交或结果不明的记录保留实际状态，后续复核继续使用原账本。
+
+该模式由macOS日历启动项在20:00唤醒原守护，08:00关闭助手、专用浏览器、管理页和Docker，随后守护自身退出。Mac在白天登录或休眠后唤醒时执行到期停机。修改模式及时间后重新运行`npm run service:install`，让系统日历读取新配置。
+
 可启用北京时间20:00启动、次日07:30准备、08:00发布并在确认发布成功后停止业务组件的计划。原LaunchAgent一直保留，不再由18:30/21:00旧时段制作和提交。Mac需开机、登录并联网。
 
 模式配置为`service.overnight.enabled=true`、`startHour=20`、`startMinute=0`，同时设置`service.prepHour=7`、`prepMinute=30`和`video.hour=8`、`minute=0`。源码示例默认关闭该模式。

@@ -87,3 +87,70 @@ test('前夜已确认公开互动可进入晨间主线，但窗口外的互动�
  const cfg=config(),data=overnightEpisodeData({videos:()=>[]},{data:{actions:[]}},'2026-11-05',cfg,time('2026-11-05T07:30:00'));
  const action={status:'sent',videoId:ID,receipt:{id:'7400000000000000002'},kind:'reply',text:'这条公开评论很有意思',day:'2026-11-04',sentAt:'2026-11-04T23:00:00+08:00'};assert.ok(publicInteractionMainline(data,{data:{actions:[action]}}));assert.equal(publicInteractionMainline(data,{data:{actions:[{...action,sentAt:'2026-11-04T19:59:59+08:00'}]}}),null);
 });
+
+function powerOffFixture(){
+ const h=fixture();
+ h.cfg.video.hour=7;h.cfg.video.minute=50;
+ Object.assign(h.cfg.service.overnight,{powerOffAtMorning:true,stopHour:8,stopMinute:0});
+ h.deps.stopServices=async options=>{
+  h.calls.push(['stop',options]);h.desired.worker=false;h.desired.dashboard=false;
+ };
+ return h;
+}
+test('完整停机模式在07:50提交，发布确认后等到08点停Docker，下一晚可再次唤醒',async()=>{
+ const h=powerOffFixture();
+ await h.tick('2026-11-04T20:00:00');
+ await h.tick('2026-11-05T07:30:00');
+ await h.tick('2026-11-05T07:50:00');
+ assert.equal(h.desired.worker,false);
+ assert.equal(h.calls.filter(c=>c[0]==='publish').length,1);
+ await h.tick('2026-11-05T07:51:00');
+ assert.equal(h.state().phase,'waiting_shutdown');
+ assert.ok(h.state().published.videoId);
+ assert.equal(h.calls.filter(c=>c[0]==='stop').length,0);
+ await h.tick('2026-11-05T08:00:00');
+ assert.deepEqual(h.calls.find(c=>c[0]==='stop'),['stop',{stopDocker:true}]);
+ assert.equal(h.state().stopReason,'morning_schedule');
+ assert.ok(h.state().poweredOffAt);
+ await h.tick('2026-11-05T09:00:00');
+ assert.equal(h.calls.filter(c=>c[0]==='stop').length,1);
+ await h.tick('2026-11-05T20:00:00');
+ assert.equal(h.calls.filter(c=>c[0]==='start').length,2);
+});
+test('08点后无数据库也执行完整停机，上传、未知结果及人工暂停均不导致重发',async()=>{
+ for(const status of ['uploading','prepared','publishing','uncertain','submitted','scripted']){
+  const h=powerOffFixture();
+  await h.tick('2026-11-04T20:00:00');
+  h.setEpisode({day:'2026-11-05',status,account:h.cfg.account});
+  h.desired.worker=false;
+  h.deps.readEpisode=async()=>{throw Error('数据库已关闭，不能读取');};
+  h.deps.maintain=async()=>{throw Error('停机时不能恢复业务服务');};
+  await h.tick('2026-11-05T08:00:00');
+  assert.equal(h.state().phase,'stopped');
+  assert.equal(h.episode().status,status);
+  assert.equal(h.calls.some(c=>['build','publish','review'].includes(c[0])),false);
+ }
+});
+test('白天登录的守护只完成停机，系统休眠错过08点时也不会拉起Docker',async()=>{
+ const h=powerOffFixture();
+ await h.tick('2026-11-05T10:00:00');
+ assert.equal(h.state().day,'2026-11-05');
+ assert.equal(h.state().phase,'stopped');
+ assert.equal(h.calls.some(c=>['start','build','publish','read'].includes(c[0])),false);
+});
+test('Docker停机失败保留重试状态，成功后才记完成',async()=>{
+ const h=powerOffFixture();let attempts=0;
+ h.deps.stopServices=async()=>{if(++attempts===1)throw Error('Docker尚未停止');};
+ await assert.rejects(h.tick('2026-11-05T08:00:00'),/Docker/);
+ assert.equal(h.state().poweredOffAt,undefined);
+ await h.tick('2026-11-05T08:00:30');
+ assert.ok(h.state().poweredOffAt);
+});
+test('完整停机校验提交和启动之间的时间，兼容旧配置',()=>{
+ const h=powerOffFixture();validateConfig(h.cfg);
+ assert.equal(nightWindow(h.cfg,time('2026-11-05T07:50:00')).stopAt,'2026-11-05T00:00:00.000Z');
+ for(const stopHour of [7,20,24]){
+  const invalid=structuredClone(h.cfg);invalid.service.overnight.stopHour=stopHour;
+  assert.throws(()=>validateConfig(invalid));
+ }
+});

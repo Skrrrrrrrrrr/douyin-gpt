@@ -1,6 +1,6 @@
 import {storedExists as existsSync, readStoredFile as readFileSync} from '../src/storage.mjs';
 import {safeDeliveryNote} from '../src/send-diagnostics.mjs';
-import {NightService,nightState} from '../src/night-service.mjs';
+import {NightService,nightState,nightWindow} from '../src/night-service.mjs';
 import {startLocal} from './start-local.mjs';
 import {Browser,ownedBrowserProcess,probe} from '../src/browser.mjs';
 import {storageStatus} from '../src/storage.mjs';
@@ -14,16 +14,48 @@ async function pauseNightWorker(){
  if(JSON.parse((await run('background.mjs',['status'])).stdout).running)throw new Error('执行进程尚未停止，保留浏览器与管理入口');
  endMaintenance(home);
 }
-async function stopNightServices(){
+async function powerOffDocker(){
+ let running=false;
+ try{const result=await exec('docker',['inspect','douyin-gpt-docker-database-1','--format','{{.State.Running}}'],{timeout:5000});running=result.stdout.trim()==='true';}catch{}
+ if(running)await exec('docker',['stop','--time','30','douyin-gpt-docker-database-1'],{timeout:45000});
+ try{await exec('docker',['desktop','stop','--timeout','45'],{timeout:60000});}catch{}
+ let available=false;
+ try{await exec('docker',['info','--format','{{.ServerVersion}}'],{timeout:5000});available=true;}catch{}
+ const processes=await exec('/bin/ps',['-axo','comm='],{timeout:5000});
+ const desktopRunning=processes.stdout.split('\n').some(line=>/\/Docker\.app\/Contents\/MacOS\/(?:com\.docker\.backend|Docker Desktop\.app\/Contents\/MacOS\/Docker Desktop|Docker)$/.test(line.trim()));
+ if(available||desktopRunning)throw new Error('Docker仍在运行，晨间停机尚未完成');
+}
+async function stopNightServices({stopDocker=false}={}){
  await pauseNightWorker();setDesired(home,'dashboard',false);
  const cfg=readConfig(home),owned=ownedBrowserProcess(join(home,'browser'));
  if(owned&&await probe(owned.port)){
   const browser=new Browser(home,cfg.browser);try{await browser.start();await browser.quit();}finally{browser.disconnect();}
  }
  await run('dashboard.mjs',['stop','--maintenance']);endMaintenance(home);
+ for(let i=0;i<30;i++){
+  if(!JSON.parse((await run('dashboard.mjs',['status'])).stdout).running)break;
+  if(i===29)throw new Error('管理服务尚未停止');
+  await sleep(200);
+ }
+ if(stopDocker)await powerOffDocker();
+}
+async function runNightTask(args){
+ const cfg=readConfig(home);
+ let timeout=1200000;
+ if(cfg.service.overnight.powerOffAtMorning){
+  timeout=Math.min(timeout,Date.parse(nightWindow(cfg).stopAt)-Date.now());
+  if(timeout<=0)throw new Error('已到晨间停机时间，未开始新的制作或提交');
+ }
+ const task=exec(process.execPath,[join(ROOT,'scripts/evening.mjs'),...args],{cwd:ROOT,env,timeout,detached:true,maxBuffer:1000000});
+ const cancel=()=>{
+  // Rendering descendants can keep inherited output pipes open after Node exits.
+  try{process.kill(-task.child.pid,'SIGTERM');}catch{}
+ };
+ const deadline=setTimeout(cancel,timeout);
+ try{return await task;}catch(error){cancel();throw error;}finally{clearTimeout(deadline);}
 }
 async function main(){
- if(action==='install'){console.log(JSON.stringify(await installService(home),null,2));return;}if(action==='uninstall'){console.log(JSON.stringify(await uninstallService(home),null,2));return;}if(action==='status'){const cfg=readConfig(home),schedule=cfg.service.overnight.enabled?{start:String(cfg.service.overnight.startHour).padStart(2,'0')+':'+String(cfg.service.overnight.startMinute).padStart(2,'0'),prepare:String(cfg.service.prepHour).padStart(2,'0')+':'+String(cfg.service.prepMinute).padStart(2,'0'),publish:String(cfg.video.hour).padStart(2,'0')+':'+String(cfg.video.minute).padStart(2,'0'),stop:'after_confirmed_publication',timeZone:'Asia/Shanghai'}:null;console.log(JSON.stringify({...await serviceStatus(home),schedule,window:cfg.service.overnight.enabled?nightState(home):null},null,2));return;}if(action!=='run')throw new Error('用法：supervisor.mjs install|uninstall|status|run');
+ if(action==='install'){console.log(JSON.stringify(await installService(home),null,2));return;}if(action==='uninstall'){console.log(JSON.stringify(await uninstallService(home),null,2));return;}if(action==='status'){const cfg=readConfig(home),schedule=cfg.service.overnight.enabled?{start:String(cfg.service.overnight.startHour).padStart(2,'0')+':'+String(cfg.service.overnight.startMinute).padStart(2,'0'),prepare:String(cfg.service.prepHour).padStart(2,'0')+':'+String(cfg.service.prepMinute).padStart(2,'0'),publish:String(cfg.video.hour).padStart(2,'0')+':'+String(cfg.video.minute).padStart(2,'0'),stop:cfg.service.overnight.powerOffAtMorning?String(cfg.service.overnight.stopHour).padStart(2,'0')+':'+String(cfg.service.overnight.stopMinute).padStart(2,'0'):'after_confirmed_publication',powerOffDocker:cfg.service.overnight.powerOffAtMorning,timeZone:'Asia/Shanghai'}:null;console.log(JSON.stringify({...await serviceStatus(home),schedule,window:cfg.service.overnight.enabled?nightState(home):null},null,2));return;}if(action!=='run')throw new Error('用法：supervisor.mjs install|uninstall|status|run');
  const control=join(home,'service');mkdirSync(control,{recursive:true,mode:0o700});const release=takeLock(control),health=new Health(home);let stopping=false;process.on('SIGTERM',()=>{stopping=true;});process.on('SIGINT',()=>{stopping=true;});
  const attempts={worker:0,dashboard:0},retryAt={worker:0,dashboard:0};let lastSessionProbe=0,lastChannelProbe=0;const maintain=async(cfg,desired,status)=>{
    let storageReady=true;try{status.storage=storageStatus(home);health.resolve('service-storage');}catch{storageReady=false;status.storage={backend:'postgres',ready:false};health.alert('service-storage','业务数据库不可用','请检查Docker数据库，恢复后守护会重新检查；没有回退本机旧账本。',{severity:'error',persistent:true});}
@@ -56,13 +88,19 @@ async function main(){
   maintain:async(cfg,status)=>{await maintain(cfg,serviceDesired(home),status);if(cfg.backup.enabled&&status.storage?.ready)try{const backups=new Backups(home);if(!backups.list().some(b=>b.day===dayKey()))backups.create({reason:'daily'});status.backupDay=backups.list()[0]?.day;health.resolve('service-backup');}catch{health.alert('service-backup','加密备份未完成','请查看备份页；现有文件已保留');}return status;},
   readEpisode:async day=>read(join(home,'video',day,'episode.json'),null),
   approved:async state=>!!approvedEpisode(home,state),
-  runTask:async(args,kind)=>supervisePending(()=>run('evening.mjs',args,1200000),async()=>{const currentCfg=readConfig(home),desired=serviceDesired(home),status={version:1,pid:process.pid,checkedAt:new Date().toISOString(),desired,task:{kind,day:nightState(home).day},window:nightState(home)};if(!stopping&&currentCfg.service.enabled&&!desired.corrupt&&desired.maintenanceUntil<Date.now())await maintain(currentCfg,desired,status);atomicJson(join(home,'supervisor-runtime.json'),status);},{intervalMs:Math.max(1000,readConfig(home).service.pollSeconds*1000),onTickError:()=>health.alert('night-service','夜间守护检查暂未完成','原任务仍保留，不重复创建任务')}),
-  review:async day=>exec(process.execPath,[join(ROOT,'src/cli.mjs'),'video-review','--day',day],{cwd:ROOT,env,timeout:90000,maxBuffer:1000000}),
+  runTask:async(args,kind)=>supervisePending(()=>runNightTask(args),async()=>{const currentCfg=readConfig(home),desired=serviceDesired(home),status={version:1,pid:process.pid,checkedAt:new Date().toISOString(),desired,task:{kind,day:nightState(home).day},window:nightState(home)};if(!stopping&&currentCfg.service.enabled&&!desired.corrupt&&desired.maintenanceUntil<Date.now())await maintain(currentCfg,desired,status);atomicJson(join(home,'supervisor-runtime.json'),status);},{intervalMs:Math.max(1000,readConfig(home).service.pollSeconds*1000),onTickError:()=>health.alert('night-service','夜间守护检查暂未完成','原任务仍保留，不重复创建任务')}),
+  review:async day=>{
+   const cfg=readConfig(home);
+   const remaining=cfg.service.overnight.powerOffAtMorning?Date.parse(nightWindow(cfg).stopAt)-Date.now():90000;
+   if(remaining<=0)return;
+   return exec(process.execPath,[join(ROOT,'src/cli.mjs'),'video-review','--day',day],{cwd:ROOT,env,timeout:Math.min(90000,remaining),maxBuffer:1000000});
+  },
   alert:(title,message)=>health.alert('night-service',title,message,{severity:'error',persistent:true}),resolve:()=>health.resolve('night-service'),
  });
  try{while(!stopping){const cfg=readConfig(home),desired=serviceDesired(home),status={version:1,pid:process.pid,checkedAt:new Date().toISOString(),desired};
   if(desired.corrupt)health.alert('service-desired-corrupt','后台运行目标需核对','运行目标记录损坏，已保持暂停；请在控制台明确选择启动或停止以重建。');
-  if(cfg.service.enabled&&!desired.corrupt&&desired.maintenanceUntil<Date.now()){
+  const morningPowerOff=cfg.service.overnight.enabled&&cfg.service.overnight.powerOffAtMorning&&Date.now()>=Date.parse(nightWindow(cfg).stopAt);
+  if(cfg.service.enabled&&(morningPowerOff||!desired.corrupt&&desired.maintenanceUntil<Date.now())){
    if(cfg.service.overnight.enabled){
     health.notify=cfg.monitor?.notify;
     try{status.window=await night.tick(cfg,{status});status.desired=serviceDesired(home);for(const key of ['worker','dashboard'])if(!status.desired[key])status[key]=false;health.resolve('service-watchdog');}
@@ -73,7 +111,12 @@ async function main(){
    if(cfg.backup.enabled)try{const backups=new Backups(home);if(!backups.list().some(b=>b.day===dayKey()))backups.create({reason:'daily'});status.backupDay=backups.list()[0]?.day;health.resolve('service-backup');}catch{health.alert('service-backup','加密备份未完成','请查看备份页；现有文件已保留');}
    }
   }
-  atomicJson(join(home,'supervisor-runtime.json'),status);for(let i=0;i<cfg.service.pollSeconds&&!stopping;i++)await sleep(1000);
+  atomicJson(join(home,'supervisor-runtime.json'),status);
+  if(cfg.service.overnight.enabled&&cfg.service.overnight.powerOffAtMorning){
+   if(!cfg.service.enabled||status.window?.poweredOffAt)break;
+   if(Date.now()>=Date.parse(nightWindow(cfg).stopAt)&&status.window?.phase==='finishing')continue;
+  }
+  for(let i=0;i<cfg.service.pollSeconds&&!stopping;i++)await sleep(1000);
  }}finally{release();}
 }
 main().catch(error=>{console.error(error.message);process.exitCode=1;});
